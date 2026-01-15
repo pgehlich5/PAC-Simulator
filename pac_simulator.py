@@ -20,10 +20,10 @@ except Exception:
 # --- Chamber Thresholds & Hysteresis ---------------------------------------------
 THRESHOLDS = {
     "SVC": 0,
-    "RA": 1000,
-    "RV": 2500,
-    "PA": 4000,
-    "PCWP": 5000,
+    "RA": 500,
+    "RV": 1000,
+    "PA": 2000,
+    "PCWP": 3000,
 }
 HYST = 20  # steps of hysteresis to prevent chamber flicker
 

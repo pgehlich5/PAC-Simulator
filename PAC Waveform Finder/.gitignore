@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Output data (large files — regenerate with the scripts)
+pap_waveforms/
+pap_records.json
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/

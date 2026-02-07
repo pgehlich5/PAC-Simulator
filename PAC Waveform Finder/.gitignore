@@ -9,6 +9,9 @@ venv/
 pap_waveforms/
 pap_records.json
 
+# Streamlit
+.streamlit/
+
 # IDE
 .vscode/
 .idea/

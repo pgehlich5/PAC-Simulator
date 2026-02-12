@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
 """
 PAC Insertion Simulator with Philips IntelliVue-style Pressure Waveforms
-Displays authentic arterial pressure traces as catheter advances through cardiac chambers
+
+Supports two modes:
+  Generated mode (default):
+    Displays mathematically generated pressure traces as catheter advances
+    through cardiac chambers.  Uses rotary encoder or +/- keys.
+
+  Real waveform mode (--mode real --case <name>):
+    Plays back real patient waveforms extracted from MIMIC-III.
+    Shows multiple signals (ECG, ABP, PAP) like a bedside monitor.
+    Loops every 2 minutes.
+
+Usage:
+  python pac_simulator.py                          # generated mode
+  python pac_simulator.py --mode real --case normal_sinus  # real waveform mode
 """
 
-import tkinter as tk
+import argparse
+import csv
+import json
 import math
+import os
 import time
+import tkinter as tk
 
 # --- Optional GPIO imports (graceful fallback for Windows/testing) ---------------
 try:
@@ -77,6 +94,64 @@ SAMPLES_PER_BEAT = 100
 SCROLL_SPEED = 4  # pixels per frame (constant across all chambers)
 FRAME_RATE = 60  # Hz
 
+# --- Signal display configuration for real waveform mode -------------------------
+SIGNAL_CONFIG = {
+    "II": {
+        "color": "#00FF00",       # Green (ECG)
+        "label": "ECG II",
+        "min_val": -0.5,
+        "max_val": 1.5,
+        "unit": "mV",
+        "grid_major": 0.5,
+        "grid_minor": 0.25,
+        "grid_color": "#003300",
+        "grid_major_color": "#005500",
+        "label_color": "#00FF00",
+    },
+    "ABP": {
+        "color": "#FF3333",       # Red (arterial)
+        "label": "ABP",
+        "min_val": 0,
+        "max_val": 200,
+        "unit": "mmHg",
+        "grid_major": 50,
+        "grid_minor": 25,
+        "grid_color": "#330000",
+        "grid_major_color": "#550000",
+        "label_color": "#FF3333",
+    },
+    "PAP": {
+        "color": "#FFCC00",       # Yellow (PA pressure)
+        "label": "PAP",
+        "min_val": 0,
+        "max_val": 50,
+        "unit": "mmHg",
+        "grid_major": 10,
+        "grid_minor": 5,
+        "grid_color": "#332800",
+        "grid_major_color": "#4a3800",
+        "label_color": "#FFCC00",
+    },
+    "CVP": {
+        "color": "#00BFFF",       # Blue (central venous)
+        "label": "CVP",
+        "min_val": -5,
+        "max_val": 20,
+        "unit": "mmHg",
+        "grid_major": 5,
+        "grid_minor": 2.5,
+        "grid_color": "#001a33",
+        "grid_major_color": "#002a55",
+        "label_color": "#00BFFF",
+    },
+}
+
+# Display priority order — signals are stacked top to bottom in this order
+SIGNAL_DISPLAY_ORDER = ["II", "ABP", "PAP", "CVP"]
+
+# Pressure signals that get sys/dia/mean readout
+PRESSURE_SIGNALS = {"ABP", "PAP", "CVP"}
+
 # Track current chamber
 current_chamber = "SVC"
 
@@ -112,13 +187,9 @@ def generate_waveform(waveform_type: str) -> list:
     if waveform_type == "cvp":  # CVP/RA waveform (a, c, v waves)
         for i in range(SAMPLES_PER_BEAT):
             t = i / SAMPLES_PER_BEAT
-            # A-wave (atrial contraction) around 0.1
             a_wave = 0.3 * math.exp(-((t - 0.1) ** 2) / 0.002) if 0.05 < t < 0.2 else 0
-            # C-wave (ventricular contraction, tricuspid bulge) around 0.25
             c_wave = 0.15 * math.exp(-((t - 0.25) ** 2) / 0.001) if 0.2 < t < 0.35 else 0
-            # V-wave (venous filling) around 0.55
             v_wave = 0.25 * math.exp(-((t - 0.55) ** 2) / 0.004) if 0.4 < t < 0.75 else 0
-            # Base pressure
             base = 0.2
             value = base + a_wave + c_wave + v_wave
             points.append(min(1.0, value))
@@ -126,42 +197,144 @@ def generate_waveform(waveform_type: str) -> list:
     elif waveform_type == "rv":  # Right Ventricle
         for i in range(SAMPLES_PER_BEAT):
             t = i / SAMPLES_PER_BEAT
-            if t < 0.35:  # Systole - rapid rise and slower fall
+            if t < 0.35:
                 if t < 0.1:
-                    value = t / 0.1  # Rapid upstroke
+                    value = t / 0.1
                 else:
-                    value = 1.0 - ((t - 0.1) / 0.25) * 0.3  # Plateau/slight decline
-            else:  # Diastole - rapid drop to low pressure
+                    value = 1.0 - ((t - 0.1) / 0.25) * 0.3
+            else:
                 value = 0.7 * math.exp(-(t - 0.35) / 0.1)
             points.append(min(1.0, max(0.0, value)))
 
     elif waveform_type == "pa":  # Pulmonary Artery
         for i in range(SAMPLES_PER_BEAT):
             t = i / SAMPLES_PER_BEAT
-            if t < 0.35:  # Systole
+            if t < 0.35:
                 if t < 0.1:
-                    value = t / 0.1  # Rapid upstroke
+                    value = t / 0.1
                 else:
-                    value = 1.0 - ((t - 0.1) / 0.25) * 0.4  # Gradual decline
-            else:  # Diastole with dicrotic notch
-                # Dicrotic notch around t=0.35
+                    value = 1.0 - ((t - 0.1) / 0.25) * 0.4
+            else:
                 notch = -0.15 * math.exp(-((t - 0.36) ** 2) / 0.0005) if 0.34 < t < 0.38 else 0
                 value = 0.6 * math.exp(-(t - 0.35) / 0.25) + 0.4 + notch
             points.append(min(1.0, max(0.0, value)))
 
-    elif waveform_type == "wedge":  # PCWP (similar to LA pressure, resembles CVP but damped)
+    elif waveform_type == "wedge":  # PCWP
         for i in range(SAMPLES_PER_BEAT):
             t = i / SAMPLES_PER_BEAT
-            # A-wave (atrial contraction) - more prominent than CVP
             a_wave = 0.35 * math.exp(-((t - 0.15) ** 2) / 0.003) if 0.05 < t < 0.3 else 0
-            # V-wave (venous return during ventricular systole) around 0.5
             v_wave = 0.4 * math.exp(-((t - 0.5) ** 2) / 0.006) if 0.35 < t < 0.7 else 0
-            # Base pressure (higher than CVP)
             base = 0.5
             value = base + a_wave + v_wave
             points.append(min(1.0, value))
 
     return points
+
+
+# =============================================================================
+# Real Waveform Loader — loads extracted MIMIC-III cases from waveform_data/
+# =============================================================================
+class RealWaveformLoader:
+    """Load and serve real waveform data from exported CSV cases."""
+
+    def __init__(self, case_name):
+        self.case_name = case_name
+        self.base_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "waveform_data", case_name
+        )
+        self.metadata = {}
+        self.signals = {}       # {signal_name: list of float values}
+        self.signal_list = []   # ordered list of available signal names
+        self.fs = 125           # sampling rate
+        self.num_samples = 0
+        self.description = ""
+
+        self._load()
+
+    def _load(self):
+        """Load metadata and all signal CSVs."""
+        meta_path = os.path.join(self.base_dir, "metadata.json")
+        if not os.path.exists(meta_path):
+            raise FileNotFoundError(
+                f"Waveform case not found: {meta_path}\n"
+                f"Run export_waveform_case.py first to create it."
+            )
+
+        with open(meta_path, "r") as f:
+            self.metadata = json.load(f)
+
+        self.fs = self.metadata["sampling_rate_hz"]
+        self.num_samples = self.metadata["num_samples"]
+        self.description = self.metadata.get("description", "")
+
+        # Load each signal CSV in display priority order
+        available = {s["signal_name"]: s for s in self.metadata["signals"]}
+        for sig_name in SIGNAL_DISPLAY_ORDER:
+            if sig_name in available:
+                csv_path = os.path.join(
+                    self.base_dir, available[sig_name]["file"]
+                )
+                self.signals[sig_name] = self._load_csv(csv_path)
+                self.signal_list.append(sig_name)
+
+        if not self.signal_list:
+            raise ValueError(
+                f"No displayable signals found in case '{self.case_name}'. "
+                f"Available: {list(available.keys())}"
+            )
+
+        print(f"Loaded case '{self.case_name}': "
+              f"{len(self.signal_list)} signals, "
+              f"{self.num_samples} samples ({self.num_samples/self.fs:.0f}s)")
+        for sig in self.signal_list:
+            cfg = SIGNAL_CONFIG.get(sig, {})
+            print(f"  {sig}: {cfg.get('label', sig)} ({cfg.get('unit', '?')})")
+
+    @staticmethod
+    def _load_csv(path):
+        """Load a single-column CSV (with header) into a list of floats."""
+        values = []
+        with open(path, "r") as f:
+            reader = csv.reader(f)
+            next(reader)  # skip header
+            for row in reader:
+                try:
+                    values.append(float(row[0]))
+                except (ValueError, IndexError):
+                    values.append(0.0)
+        return values
+
+    def get_sample(self, signal_name, index):
+        """Get a single sample, wrapping around for looping."""
+        data = self.signals.get(signal_name)
+        if data is None:
+            return 0.0
+        return data[index % len(data)]
+
+    def compute_pressure_stats(self, signal_name, window_samples=1250):
+        """Compute sys/dia/mean from the most recent window of pressure data.
+
+        Uses a simple min/max/mean approach over a window (default ~10 seconds
+        at 125 Hz).
+        """
+        data = self.signals.get(signal_name)
+        if data is None:
+            return None
+
+        # Use the whole signal for now (it's only 2 minutes)
+        vals = data
+        if not vals:
+            return None
+
+        systolic = max(vals)
+        diastolic = min(vals)
+        mean_val = sum(vals) / len(vals)
+        return {
+            "systolic": round(systolic),
+            "diastolic": round(diastolic),
+            "mean": round(mean_val),
+        }
 
 
 # --- Hardware or mock setup ------------------------------------------------------
@@ -175,181 +348,135 @@ else:
     _zero_offset = 0
 
 
-# --- Main Application ------------------------------------------------------------
-class PAC_Simulator:
+# =============================================================================
+# Generated Mode — original PAC simulator (single pressure trace + encoder)
+# =============================================================================
+class PAC_Simulator_Generated:
+    """Original generated-waveform mode with chamber advancement."""
+
     def __init__(self, root):
         self.root = root
         self.root.title("PAC Simulator - Philips IntelliVue")
         self.root.geometry("1280x800")
         self.root.configure(bg="#000000")
 
-        # Waveform data buffer (stores pressure values for display)
-        self.waveform_buffer = []  # List to store all waveform points with x positions
+        # Waveform data buffer
+        self.waveform_buffer = []
         self.current_waveform = generate_waveform("cvp")
         self.waveform_index = 0
-        self.scan_x = 0  # Current x-position of the scan line
-        self.current_chamber_name = "SVC"  # Track chamber for smooth transitions
+        self.scan_x = 0
+        self.current_chamber_name = "SVC"
 
-        # Setup UI
         self._create_ui()
 
-        # Animation control
         self.last_update = time.time()
         self.running = True
 
-        # Start update loops
         self._update_waveform()
         self._update_chamber()
 
     def _create_ui(self):
         """Create Philips IntelliVue-style interface."""
-
-        # Top status bar (dark gray background)
+        # Top status bar
         self.frame_top = tk.Frame(self.root, bg="#1a1a1a", height=60)
         self.frame_top.pack(fill=tk.X, side=tk.TOP)
         self.frame_top.pack_propagate(False)
 
-        # Chamber name label (left side, yellow text)
         self.lbl_chamber_name = tk.Label(
-            self.frame_top,
-            text="SUPERIOR VENA CAVA",
-            font=("Helvetica", 18, "bold"),
-            fg="#FFD84D",
-            bg="#1a1a1a"
+            self.frame_top, text="SUPERIOR VENA CAVA",
+            font=("Helvetica", 18, "bold"), fg="#FFD84D", bg="#1a1a1a"
         )
         self.lbl_chamber_name.pack(side=tk.LEFT, padx=20, pady=10)
 
-        # Steps counter (right side)
         self.lbl_steps = tk.Label(
-            self.frame_top,
-            text="Steps: 0",
-            font=("Helvetica", 14),
-            fg="#AAAAAA",
-            bg="#1a1a1a"
+            self.frame_top, text="Steps: 0",
+            font=("Helvetica", 14), fg="#AAAAAA", bg="#1a1a1a"
         )
         self.lbl_steps.pack(side=tk.RIGHT, padx=20, pady=10)
 
-        # Main waveform display area
+        # Main area
         self.frame_main = tk.Frame(self.root, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True)
 
-        # Waveform canvas (scrolling pressure trace) - goes first, takes most space
         self.canvas = tk.Canvas(
-            self.frame_main,
-            bg="#000000",
-            highlightthickness=0
+            self.frame_main, bg="#000000", highlightthickness=0
         )
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 5), pady=10)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+                         padx=(10, 5), pady=10)
 
-        # Pressure values display on RIGHT side (like IntelliVue PAP display)
+        # Pressure values
         self.frame_values = tk.Frame(self.frame_main, bg="#000000", width=400)
         self.frame_values.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 35), pady=10)
         self.frame_values.pack_propagate(False)
 
-        # Pressure display in horizontal format: "28/15 (21)" - compact spacing
         self.lbl_pressure = tk.Label(
-            self.frame_values,
-            text="5/2 (3)",
-            font=("Arial", 50, "bold"),  # Arial is narrower than Courier, closer to Philips
-            fg="#FFCC00",  # Yellow like PAP display
-            bg="#000000",
+            self.frame_values, text="5/2 (3)",
+            font=("Arial", 50, "bold"), fg="#FFCC00", bg="#000000",
             justify=tk.CENTER
         )
         self.lbl_pressure.pack(expand=True, padx=20)
 
-        # Bottom control bar
+        # Bottom bar
         self.frame_bottom = tk.Frame(self.root, bg="#1a1a1a", height=50)
         self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
         self.frame_bottom.pack_propagate(False)
 
-        # Reset button
         self.btn_reset = tk.Button(
-            self.frame_bottom,
-            text="RESET TO SVC",
-            font=("Helvetica", 12, "bold"),
-            bg="#444444",
-            fg="#FFFFFF",
-            activebackground="#666666",
-            command=self.do_reset,
-            padx=20,
-            pady=5
+            self.frame_bottom, text="RESET TO SVC",
+            font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
+            activebackground="#666666", command=self.do_reset,
+            padx=20, pady=5
         )
         self.btn_reset.pack(side=tk.LEFT, padx=20, pady=10)
 
-        # Mode indicator
-        if _HAS_GPIO:
-            mode_text = "HARDWARE MODE - Rotary Encoder Active"
-        else:
-            mode_text = "SIMULATION MODE - Use +/- keys or Reset button"
-
+        mode_text = ("HARDWARE MODE - Rotary Encoder Active" if _HAS_GPIO
+                     else "SIMULATION MODE - Use +/- keys or Reset button")
         self.lbl_mode = tk.Label(
-            self.frame_bottom,
-            text=mode_text,
-            font=("Helvetica", 10),
-            fg="#888888",
-            bg="#1a1a1a"
+            self.frame_bottom, text=mode_text,
+            font=("Helvetica", 10), fg="#888888", bg="#1a1a1a"
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
 
-        # Draw initial grid
         self.canvas.bind("<Configure>", self._on_canvas_resize)
         self._draw_grid()
 
     def _draw_grid(self):
-        """Draw IntelliVue-style grid lines with fixed 0-50 mmHg pressure scale."""
+        """Draw grid lines with fixed 0-50 mmHg pressure scale."""
         self.canvas.delete("grid")
         self.canvas.delete("scale_labels")
 
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
-
         if w <= 1 or h <= 1:
             return
 
-        # Pressure scale: 0-50 mmHg
-        min_pressure = 0
         max_pressure = 50
         margin_top = 20
         margin_bottom = 20
         usable_height = h - margin_top - margin_bottom
 
-        grid_color = "#332800"  # Dark yellow/brown for subtle grid
-        major_grid_color = "#4a3800"  # Slightly brighter dark yellow
-
-        # Horizontal grid lines (pressure divisions) - every 5 mmHg
-        for pressure in range(min_pressure, max_pressure + 1, 5):
+        for pressure in range(0, max_pressure + 1, 5):
             y = margin_top + (max_pressure - pressure) / max_pressure * usable_height
-
-            # Major lines at 0, 10, 20, 30, 40, 50 mmHg
             if pressure % 10 == 0:
-                self.canvas.create_line(0, y, w, y, fill=major_grid_color, width=2, tags="grid")
-                # Add pressure labels on the left - larger and brighter
+                self.canvas.create_line(0, y, w, y, fill="#4a3800", width=2, tags="grid")
                 self.canvas.create_text(
-                    8, y,
-                    text=str(pressure),
-                    font=("Helvetica", 12, "bold"),
-                    fill="#FFDD00",  # Brighter yellow
-                    anchor=tk.W,
-                    tags="scale_labels"
+                    8, y, text=str(pressure),
+                    font=("Helvetica", 12, "bold"), fill="#FFDD00",
+                    anchor=tk.W, tags="scale_labels"
                 )
             else:
-                # Minor lines at 5, 15, 25, 35, 45 mmHg
-                self.canvas.create_line(0, y, w, y, fill=grid_color, tags="grid")
+                self.canvas.create_line(0, y, w, y, fill="#332800", tags="grid")
 
     def _on_canvas_resize(self, event=None):
-        """Handle canvas resize events."""
-        # pylint: disable=unused-argument
         self._draw_grid()
 
     def _get_steps(self) -> int:
-        """Return logical steps with zeroing via offset for hardware or mock."""
         if _HAS_GPIO:
             s = int(getattr(encoder, "steps", 0)) - _zero_offset
             return max(0, s)
         return _steps_sim
 
     def do_reset(self):
-        """Reset encoder position to SVC (zero)."""
         global _steps_sim, _zero_offset
         if _HAS_GPIO:
             _zero_offset = int(getattr(encoder, "steps", 0))
@@ -357,7 +484,6 @@ class PAC_Simulator:
             _steps_sim = 0
 
     def _update_chamber(self):
-        """Update chamber detection and UI labels based on encoder position."""
         if not self.running:
             return
 
@@ -365,24 +491,18 @@ class PAC_Simulator:
         new_chamber = map_steps_to_chamber(steps)
         params = CHAMBER_PARAMS[new_chamber]
 
-        # Update labels
         self.lbl_chamber_name.config(text=params["name"].upper())
-        # Update pressure display in horizontal format: "SYS/DIA (MEAN)" - compact spacing
         pressure_text = f"{params['systolic']}/{params['diastolic']} ({params['mean']})"
         self.lbl_pressure.config(text=pressure_text)
         self.lbl_steps.config(text=f"Steps: {steps}")
 
-        # Update waveform if chamber changed (but don't reset index - keep scrolling smooth)
         if new_chamber != self.current_chamber_name:
             self.current_chamber_name = new_chamber
             self.current_waveform = generate_waveform(params["waveform_type"])
-            # Don't reset waveform_index - let it continue for smooth transition
 
-        # Schedule next update
         self.root.after(50, self._update_chamber)
 
     def _update_waveform(self):
-        """Animate sweeping scan line waveform display."""
         if not self.running:
             return
 
@@ -391,161 +511,505 @@ class PAC_Simulator:
             self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
             return
 
-        # Get current parameters from tracked chamber
         params = CHAMBER_PARAMS[self.current_chamber_name]
         systolic = params["systolic"]
         diastolic = params["diastolic"]
         color = params["color"]
-
         clear_zone_width = 20
 
-        # Remove old points that are about to be overwritten by the scan line
-        # Keep only points that are NOT in the zone about to be erased
         self.waveform_buffer = [
             point for point in self.waveform_buffer
             if not (self.scan_x <= point['x'] < self.scan_x + clear_zone_width + SCROLL_SPEED)
         ]
 
-        # Add new waveform samples at scan line position
         for _ in range(SCROLL_SPEED):
-            # Get next waveform point (normalized 0-1)
             norm_value = self.current_waveform[self.waveform_index]
-
-            # Scale to actual pressure range
             pressure = diastolic + (systolic - diastolic) * norm_value
-
-            # Store point with its x-position
             self.waveform_buffer.append({
-                'x': self.scan_x,
-                'pressure': pressure,
-                'systolic': systolic,
-                'diastolic': diastolic
+                'x': self.scan_x, 'pressure': pressure,
             })
-
-            # Advance scan line position
             self.scan_x = (self.scan_x + 1) % w
-
-            # Advance waveform index
             self.waveform_index = (self.waveform_index + 1) % len(self.current_waveform)
 
-        # Also clean up points that have wrapped around (old scan from previous loops)
-        # Keep only the most recent screen width of data
         if len(self.waveform_buffer) > w * 1.5:
             self.waveform_buffer = self.waveform_buffer[-int(w * 1.2):]
 
-        # Redraw waveform
         self._draw_waveform_sweep(color)
+        self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
 
-        # Schedule next frame at consistent interval
-        frame_delay = int(1000 / FRAME_RATE)
-        self.root.after(frame_delay, self._update_waveform)
-
-    def _draw_waveform_sweep(self, color: str):
-        """Draw waveform with sweeping scan line (oscilloscope style)."""
+    def _draw_waveform_sweep(self, color):
         self.canvas.delete("waveform")
         self.canvas.delete("clearzone")
 
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
-
         if w <= 1 or h <= 1 or len(self.waveform_buffer) < 2:
             return
 
-        # Fixed pressure scale: 0-50 mmHg
-        min_pressure = 0
         max_pressure = 50
         margin_top = 20
         margin_bottom = 20
         usable_height = h - margin_top - margin_bottom
         clear_zone_width = 20
 
-        # Build continuous waveform points, excluding those in the clear zone
         waveform_points = []
-
         for point in self.waveform_buffer:
-            # Skip points that are in the clear zone
             if self.scan_x <= point['x'] < self.scan_x + clear_zone_width:
                 continue
-
-            # Map pressure to y-coordinate using fixed 0-50 mmHg scale
-            pressure = point['pressure']
-            # Clamp pressure to scale range
-            pressure = max(min_pressure, min(max_pressure, pressure))
-            # Calculate y position (inverted - higher pressure = lower y value)
+            pressure = max(0, min(max_pressure, point['pressure']))
             y = margin_top + (max_pressure - pressure) / max_pressure * usable_height
-
             waveform_points.append((point['x'], y))
 
-        # Sort points by x-coordinate to draw properly
         waveform_points.sort(key=lambda p: p[0])
 
-        # Draw waveform as continuous segments, breaking at the clear zone
         if len(waveform_points) >= 2:
             current_segment = [waveform_points[0]]
-
             for i in range(1, len(waveform_points)):
-                # Check if there's a gap (clear zone between points)
-                if abs(waveform_points[i][0] - waveform_points[i-1][0]) > clear_zone_width + 5:
-                    # Draw current segment
+                if abs(waveform_points[i][0] - waveform_points[i - 1][0]) > clear_zone_width + 5:
                     if len(current_segment) >= 2:
-                        points_flat = []
+                        pts = []
                         for px, py in current_segment:
-                            points_flat.extend([px, py])
+                            pts.extend([px, py])
                         self.canvas.create_line(
-                            *points_flat,
-                            fill=color,
-                            width=2,
-                            smooth=False,
-                            tags="waveform"
+                            *pts, fill=color, width=2, smooth=False, tags="waveform"
                         )
-                    # Start new segment
                     current_segment = [waveform_points[i]]
                 else:
                     current_segment.append(waveform_points[i])
 
-            # Draw final segment
             if len(current_segment) >= 2:
-                points_flat = []
+                pts = []
                 for px, py in current_segment:
-                    points_flat.extend([px, py])
+                    pts.extend([px, py])
                 self.canvas.create_line(
-                    *points_flat,
-                    fill=color,
-                    width=2,
-                    smooth=False,
-                    tags="waveform"
+                    *pts, fill=color, width=2, smooth=False, tags="waveform"
                 )
 
-        # Draw clear zone (black eraser area only, no yellow line)
         self.canvas.create_rectangle(
-            self.scan_x, 0,
-            self.scan_x + clear_zone_width, h,
-            fill="#000000",
-            outline="",
-            tags="clearzone"
+            self.scan_x, 0, self.scan_x + clear_zone_width, h,
+            fill="#000000", outline="", tags="clearzone"
         )
 
     def cleanup(self):
-        """Cleanup on exit."""
         self.running = False
 
 
-# --- Keyboard controls for mock mode ---------------------------------------------
+# =============================================================================
+# Real Waveform Mode — multi-signal bedside monitor display
+# =============================================================================
+class PAC_Simulator_Real:
+    """Real waveform mode: plays back extracted MIMIC-III patient data."""
+
+    def __init__(self, root, loader):
+        self.root = root
+        self.loader = loader
+        self.root.title(f"PAC Simulator - Real Waveforms - {loader.case_name}")
+        self.root.geometry("1280x800")
+        self.root.configure(bg="#000000")
+
+        # Playback state
+        self.sample_index = 0       # current position in the waveform data
+        self.running = True
+        self.last_frame_time = time.time()
+
+        # Accumulator for sub-sample advancement
+        # At 125 Hz source and 60 FPS display, we advance ~2.08 samples/frame
+        self.sample_accumulator = 0.0
+        self.samples_per_frame = self.loader.fs / FRAME_RATE
+
+        # Per-signal display buffers: {signal_name: [(x, value), ...]}
+        self.signal_buffers = {sig: [] for sig in self.loader.signal_list}
+        self.scan_x = 0
+
+        # Compute pressure stats once (for the whole 2-minute window)
+        self.pressure_stats = {}
+        for sig in self.loader.signal_list:
+            if sig in PRESSURE_SIGNALS:
+                stats = self.loader.compute_pressure_stats(sig)
+                if stats:
+                    self.pressure_stats[sig] = stats
+
+        # Compute heart rate from ECG if available
+        self.heart_rate = self._compute_heart_rate()
+
+        self._create_ui()
+
+        # Start animation
+        self._update_waveform()
+
+    def _compute_heart_rate(self):
+        """Estimate heart rate from ECG Lead II using R-R interval detection."""
+        ecg_data = self.loader.signals.get("II")
+        if ecg_data is None:
+            return None
+
+        fs = self.loader.fs
+        # Simple peak detection: find R-peaks (the tallest peaks in ECG)
+        # Use a threshold-based approach
+        data = ecg_data
+        threshold = max(data) * 0.6  # 60% of max amplitude
+
+        # Find peaks above threshold with minimum distance of 0.4s (150 bpm max)
+        min_distance = int(0.4 * fs)
+        peaks = []
+        i = 0
+        while i < len(data):
+            if data[i] > threshold:
+                # Find local max in this region
+                peak_idx = i
+                while i < len(data) and data[i] > threshold:
+                    if data[i] > data[peak_idx]:
+                        peak_idx = i
+                    i += 1
+                peaks.append(peak_idx)
+                i = peak_idx + min_distance
+            else:
+                i += 1
+
+        if len(peaks) < 2:
+            return None
+
+        # Calculate average R-R interval
+        rr_intervals = []
+        for j in range(1, len(peaks)):
+            rr = (peaks[j] - peaks[j - 1]) / fs  # seconds
+            if 0.3 < rr < 2.0:  # 30-200 bpm range
+                rr_intervals.append(rr)
+
+        if not rr_intervals:
+            return None
+
+        avg_rr = sum(rr_intervals) / len(rr_intervals)
+        hr = round(60.0 / avg_rr)
+        return hr
+
+    def _create_ui(self):
+        """Create multi-signal bedside monitor interface.
+
+        Each signal row is a horizontal frame with:
+          - Waveform canvas (fills most of the width)
+          - Numeric readout panel on the right (inline with its waveform)
+        """
+        # Top status bar
+        self.frame_top = tk.Frame(self.root, bg="#1a1a1a", height=60)
+        self.frame_top.pack(fill=tk.X, side=tk.TOP)
+        self.frame_top.pack_propagate(False)
+
+        # Case description
+        desc = self.loader.description or self.loader.case_name
+        self.lbl_title = tk.Label(
+            self.frame_top, text=desc.upper(),
+            font=("Helvetica", 16, "bold"), fg="#FFD84D", bg="#1a1a1a"
+        )
+        self.lbl_title.pack(side=tk.LEFT, padx=20, pady=10)
+
+        # Patient info
+        src = self.loader.metadata.get("source", {})
+        patient = src.get("patient_id", "?")
+        self.lbl_patient = tk.Label(
+            self.frame_top, text=f"Patient: {patient}",
+            font=("Helvetica", 12), fg="#AAAAAA", bg="#1a1a1a"
+        )
+        self.lbl_patient.pack(side=tk.RIGHT, padx=20, pady=10)
+
+        # Bottom bar (pack before main so it stays at bottom)
+        self.frame_bottom = tk.Frame(self.root, bg="#1a1a1a", height=40)
+        self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
+        self.frame_bottom.pack_propagate(False)
+
+        duration = self.loader.num_samples / self.loader.fs
+        self.lbl_info = tk.Label(
+            self.frame_bottom,
+            text=f"REAL WAVEFORM MODE  |  {self.loader.fs} Hz  |  "
+                 f"{duration:.0f}s loop  |  "
+                 f"{len(self.loader.signal_list)} signals",
+            font=("Helvetica", 10), fg="#888888", bg="#1a1a1a"
+        )
+        self.lbl_info.pack(side=tk.LEFT, padx=20, pady=8)
+
+        # Main area: stacked signal rows
+        self.frame_main = tk.Frame(self.root, bg="#000000")
+        self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Create each signal row: [canvas | numeric readout]
+        self.canvases = {}
+        self.pressure_labels = {}
+        READOUT_WIDTH = 180  # width of the numeric panel
+
+        for sig_name in self.loader.signal_list:
+            cfg = SIGNAL_CONFIG.get(sig_name, {})
+            color = cfg.get("color", "#FFFFFF")
+            label = cfg.get("label", sig_name)
+
+            # Row frame
+            row = tk.Frame(self.frame_main, bg="#000000")
+            row.pack(fill=tk.BOTH, expand=True, pady=1)
+
+            # Waveform canvas (expands to fill)
+            canvas = tk.Canvas(row, bg="#000000", highlightthickness=0)
+            canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            canvas.bind("<Configure>",
+                        lambda e, s=sig_name: self._draw_grid_for_signal(s))
+            self.canvases[sig_name] = canvas
+
+            # Numeric readout panel (fixed width, right side, inline)
+            readout = tk.Frame(row, bg="#000000", width=READOUT_WIDTH)
+            readout.pack(side=tk.RIGHT, fill=tk.Y)
+            readout.pack_propagate(False)
+
+            if sig_name in PRESSURE_SIGNALS and sig_name in self.pressure_stats:
+                # Pressure signal: show label + sys/dia + (mean)
+                stats = self.pressure_stats[sig_name]
+
+                lbl_name = tk.Label(
+                    readout, text=label,
+                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+                )
+                lbl_name.pack(pady=(5, 0))
+
+                txt = f"{stats['systolic']}/{stats['diastolic']}"
+                lbl_val = tk.Label(
+                    readout, text=txt,
+                    font=("Arial", 30, "bold"), fg=color, bg="#000000"
+                )
+                lbl_val.pack()
+
+                lbl_mean = tk.Label(
+                    readout, text=f"({stats['mean']})",
+                    font=("Arial", 14), fg=color, bg="#000000"
+                )
+                lbl_mean.pack()
+
+                self.pressure_labels[sig_name] = lbl_val
+
+            elif sig_name not in PRESSURE_SIGNALS:
+                # ECG: show label + heart rate
+                lbl_name = tk.Label(
+                    readout, text=label,
+                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+                )
+                lbl_name.pack(pady=(5, 0))
+
+                if self.heart_rate is not None:
+                    lbl_hr = tk.Label(
+                        readout, text=f"{self.heart_rate}",
+                        font=("Arial", 30, "bold"), fg=color, bg="#000000"
+                    )
+                    lbl_hr.pack()
+
+                    lbl_bpm = tk.Label(
+                        readout, text="bpm",
+                        font=("Helvetica", 11), fg=color, bg="#000000"
+                    )
+                    lbl_bpm.pack()
+
+    def _draw_grid_for_signal(self, signal_name):
+        """Draw grid lines for a specific signal's canvas."""
+        canvas = self.canvases.get(signal_name)
+        if canvas is None:
+            return
+
+        canvas.delete("grid")
+        canvas.delete("scale_labels")
+
+        w = canvas.winfo_width()
+        h = canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        cfg = SIGNAL_CONFIG.get(signal_name, {})
+        min_val = cfg.get("min_val", 0)
+        max_val = cfg.get("max_val", 100)
+        grid_major = cfg.get("grid_major", 10)
+        grid_minor = cfg.get("grid_minor", 5)
+        grid_color = cfg.get("grid_color", "#222222")
+        grid_major_color = cfg.get("grid_major_color", "#333333")
+        label_color = cfg.get("label_color", "#888888")
+
+        margin = 5
+        usable = h - 2 * margin
+        val_range = max_val - min_val
+
+        if val_range <= 0:
+            return
+
+        # Draw grid lines
+        val = min_val
+        while val <= max_val:
+            y = margin + (max_val - val) / val_range * usable
+            is_major = (abs(val % grid_major) < 0.001 or
+                        abs(val % grid_major - grid_major) < 0.001)
+            if is_major:
+                canvas.create_line(0, y, w, y, fill=grid_major_color,
+                                   width=1, tags="grid")
+                canvas.create_text(
+                    6, y, text=f"{val:g}",
+                    font=("Helvetica", 9), fill=label_color,
+                    anchor=tk.W, tags="scale_labels"
+                )
+            else:
+                canvas.create_line(0, y, w, y, fill=grid_color, tags="grid")
+            val += grid_minor
+
+        # Signal name label in top-left
+        label = cfg.get("label", signal_name)
+        unit = cfg.get("unit", "")
+        canvas.create_text(
+            w - 10, 12, text=f"{label} ({unit})",
+            font=("Helvetica", 10, "bold"), fill=label_color,
+            anchor=tk.E, tags="scale_labels"
+        )
+
+    def _value_to_y(self, signal_name, value, canvas_height):
+        """Convert a signal value to a y-coordinate on its canvas."""
+        cfg = SIGNAL_CONFIG.get(signal_name, {})
+        min_val = cfg.get("min_val", 0)
+        max_val = cfg.get("max_val", 100)
+        margin = 5
+        usable = canvas_height - 2 * margin
+        val_range = max_val - min_val
+        if val_range <= 0:
+            return canvas_height // 2
+
+        # Clamp
+        value = max(min_val, min(max_val, value))
+        y = margin + (max_val - value) / val_range * usable
+        return y
+
+    def _update_waveform(self):
+        """Advance playback and render all signal traces."""
+        if not self.running:
+            return
+
+        # Check if canvases are ready
+        first_canvas = list(self.canvases.values())[0]
+        w = first_canvas.winfo_width()
+        if w <= 1:
+            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+            return
+
+        clear_zone_width = 20
+
+        # Calculate how many samples to advance this frame
+        # This gives us real-time playback at the source sample rate
+        self.sample_accumulator += self.samples_per_frame
+        samples_to_advance = int(self.sample_accumulator)
+        self.sample_accumulator -= samples_to_advance
+
+        # How many pixels to advance the scan line
+        # We want the sweep to match the data rate visually
+        # pixels_per_sample controls how "stretched" the waveform appears
+        pixels_per_sample = SCROLL_SPEED / max(1, samples_to_advance)
+
+        # Clear zone ahead of scan line for all signals
+        for sig_name in self.loader.signal_list:
+            self.signal_buffers[sig_name] = [
+                point for point in self.signal_buffers[sig_name]
+                if not (self.scan_x <= point[0] < self.scan_x + clear_zone_width + SCROLL_SPEED)
+            ]
+
+        # Advance through samples and add to buffers
+        for _ in range(SCROLL_SPEED):
+            # Get value for each signal at current sample index
+            for sig_name in self.loader.signal_list:
+                value = self.loader.get_sample(sig_name, self.sample_index)
+                self.signal_buffers[sig_name].append((self.scan_x, value))
+
+            self.scan_x = (self.scan_x + 1) % w
+
+            # Advance sample index (with fractional accumulation for accurate timing)
+            # Advance roughly 1 sample per pixel at SCROLL_SPEED
+            self.sample_index = (self.sample_index + 1) % self.loader.num_samples
+
+        # Trim old buffer entries
+        for sig_name in self.loader.signal_list:
+            buf = self.signal_buffers[sig_name]
+            if len(buf) > w * 1.5:
+                self.signal_buffers[sig_name] = buf[-int(w * 1.2):]
+
+        # Redraw all signals
+        self._draw_all_signals()
+
+        self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+
+    def _draw_all_signals(self):
+        """Render all signal traces on their respective canvases."""
+        clear_zone_width = 20
+
+        for sig_name in self.loader.signal_list:
+            canvas = self.canvases[sig_name]
+            canvas.delete("waveform")
+            canvas.delete("clearzone")
+
+            w = canvas.winfo_width()
+            h = canvas.winfo_height()
+            if w <= 1 or h <= 1:
+                continue
+
+            cfg = SIGNAL_CONFIG.get(sig_name, {})
+            color = cfg.get("color", "#FFFFFF")
+            buf = self.signal_buffers[sig_name]
+
+            # Build point list
+            waveform_points = []
+            for x, value in buf:
+                if self.scan_x <= x < self.scan_x + clear_zone_width:
+                    continue
+                y = self._value_to_y(sig_name, value, h)
+                waveform_points.append((x, y))
+
+            waveform_points.sort(key=lambda p: p[0])
+
+            # Draw waveform as segments (break at clear zone)
+            if len(waveform_points) >= 2:
+                current_segment = [waveform_points[0]]
+
+                for i in range(1, len(waveform_points)):
+                    if abs(waveform_points[i][0] - waveform_points[i - 1][0]) > clear_zone_width + 5:
+                        if len(current_segment) >= 2:
+                            pts = []
+                            for px, py in current_segment:
+                                pts.extend([px, py])
+                            canvas.create_line(
+                                *pts, fill=color, width=2,
+                                smooth=False, tags="waveform"
+                            )
+                        current_segment = [waveform_points[i]]
+                    else:
+                        current_segment.append(waveform_points[i])
+
+                if len(current_segment) >= 2:
+                    pts = []
+                    for px, py in current_segment:
+                        pts.extend([px, py])
+                    canvas.create_line(
+                        *pts, fill=color, width=2,
+                        smooth=False, tags="waveform"
+                    )
+
+            # Draw clear zone
+            canvas.create_rectangle(
+                self.scan_x, 0, self.scan_x + clear_zone_width, h,
+                fill="#000000", outline="", tags="clearzone"
+            )
+
+    def cleanup(self):
+        self.running = False
+
+
+# --- Keyboard controls for mock mode (generated mode only) --------------------
 def setup_keyboard_controls(app):
     """Setup keyboard shortcuts for simulation mode."""
-    if not _HAS_GPIO:
+    if not _HAS_GPIO and hasattr(app, 'do_reset'):
         def key_plus(event=None):
-            # pylint: disable=unused-argument
             global _steps_sim
             _steps_sim += 10
 
         def key_minus(event=None):
-            # pylint: disable=unused-argument
             global _steps_sim
             _steps_sim = max(0, _steps_sim - 10)
 
         def key_reset(event=None):
-            # pylint: disable=unused-argument
             app.do_reset()
 
         app.root.bind("+", key_plus)
@@ -555,25 +1019,70 @@ def setup_keyboard_controls(app):
         app.root.bind("R", key_reset)
 
 
-# --- Main entry point ------------------------------------------------------------
+# --- Main entry point --------------------------------------------------------
 def main():
+    parser = argparse.ArgumentParser(
+        description="PAC Insertion Simulator",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--mode", choices=["generated", "real"], default="generated",
+        help="Waveform mode: 'generated' (math-based, default) or "
+             "'real' (MIMIC-III patient data)"
+    )
+    parser.add_argument(
+        "--case", default=None,
+        help="Case name for real mode (folder in waveform_data/). "
+             "Example: normal_sinus"
+    )
+    args = parser.parse_args()
+
     root = tk.Tk()
-    app = PAC_Simulator(root)
 
-    # Setup hardware button if available
-    if _HAS_GPIO and reset_button is not None:
-        reset_button.when_pressed = app.do_reset
+    if args.mode == "real":
+        if not args.case:
+            # List available cases
+            data_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "waveform_data"
+            )
+            cases = []
+            if os.path.exists(data_dir):
+                cases = [d for d in os.listdir(data_dir)
+                         if os.path.isdir(os.path.join(data_dir, d))]
+            if cases:
+                print("Available cases:", ", ".join(cases))
+                print("Usage: python pac_simulator.py --mode real --case <name>")
+            else:
+                print("No waveform cases found in waveform_data/")
+                print("Run export_waveform_case.py first.")
+            return
 
-    # Setup keyboard controls for mock mode
-    setup_keyboard_controls(app)
+        print(f"PAC Simulator - Real Waveform Mode")
+        print(f"Loading case: {args.case}")
 
-    # Print startup message
-    if _HAS_GPIO:
-        print("PAC Simulator - Hardware Mode")
-        print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
+        try:
+            loader = RealWaveformLoader(args.case)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"ERROR: {e}")
+            return
+
+        app = PAC_Simulator_Real(root, loader)
     else:
-        print("PAC Simulator - Mock Mode")
-        print("Use +/- keys to simulate encoder, R to reset")
+        app = PAC_Simulator_Generated(root)
+
+        # Setup hardware button if available
+        if _HAS_GPIO and reset_button is not None:
+            reset_button.when_pressed = app.do_reset
+
+        # Setup keyboard controls
+        setup_keyboard_controls(app)
+
+        if _HAS_GPIO:
+            print("PAC Simulator - Hardware Mode")
+            print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
+        else:
+            print("PAC Simulator - Mock Mode")
+            print("Use +/- keys to simulate encoder, R to reset")
 
     try:
         root.mainloop()

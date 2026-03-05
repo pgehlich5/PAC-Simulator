@@ -2,7 +2,7 @@
 """
 PAC Insertion Simulator with Philips IntelliVue-style Pressure Waveforms
 
-Supports two modes:
+Supports three modes:
   Generated mode (default):
     Displays mathematically generated pressure traces as catheter advances
     through cardiac chambers.  Uses rotary encoder or +/- keys.
@@ -15,6 +15,15 @@ Supports two modes:
 Usage:
   python pac_simulator.py                          # generated mode
   python pac_simulator.py --mode real --case normal_sinus  # real waveform mode
+  Real advancement mode (--mode real-advancement):
+    Combines real MIMIC-III waveforms with encoder-driven chamber advancement.
+    Switches between chamber-specific waveform clips (RA, RV, PA, Wedge)
+    as the user advances the catheter.
+
+Usage:
+  python pac_simulator.py                          # generated mode
+  python pac_simulator.py --mode real --case normal_sinus  # real waveform mode
+  python pac_simulator.py --mode real-advancement   # real waveforms + encoder
 """
 
 import argparse
@@ -86,6 +95,15 @@ CHAMBER_PARAMS = {
         "waveform_type": "wedge",
         "color": "#FFCC00",
     },
+}
+
+# --- Chamber-to-case mapping for real advancement mode -----------------------
+CHAMBER_CASES = {
+    "SVC":  "pac_insertion_ra",      # SVC uses RA waveforms
+    "RA":   "pac_insertion_ra",
+    "RV":   "pac_insertion_rv",
+    "PA":   "pac_insertion_pa",
+    "PCWP": "pac_insertion_wedge",
 }
 
 # Waveform generation parameters
@@ -997,7 +1015,483 @@ class PAC_Simulator_Real:
         self.running = False
 
 
-# --- Keyboard controls for mock mode (generated mode only) --------------------
+# =============================================================================
+# Real Advancement Mode — real waveforms + encoder-driven chamber switching
+# =============================================================================
+class PAC_Simulator_RealAdvancement:
+    """Real waveform mode with encoder-driven chamber advancement.
+
+    Loads a separate MIMIC-III waveform clip for each chamber (RA, RV, PA, Wedge)
+    and switches between them as the user advances the catheter via encoder or
+    keyboard +/- keys.
+    """
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("PAC Simulator - Real Advancement Mode")
+        self.root.geometry("1280x800")
+        self.root.configure(bg="#000000")
+
+        # Load all chamber cases
+        self.loaders = {}
+        loaded_cases = set()
+        for chamber, case_name in CHAMBER_CASES.items():
+            if case_name not in loaded_cases:
+                try:
+                    self.loaders[case_name] = RealWaveformLoader(case_name)
+                    loaded_cases.add(case_name)
+                except (FileNotFoundError, ValueError) as e:
+                    print(f"WARNING: Could not load case '{case_name}' "
+                          f"for chamber {chamber}: {e}")
+
+        if not self.loaders:
+            raise ValueError(
+                "No waveform cases could be loaded for real advancement mode.\n"
+                "Ensure waveform_data/ contains: "
+                + ", ".join(set(CHAMBER_CASES.values()))
+            )
+
+        # Start in SVC/RA
+        self.current_chamber_name = "SVC"
+        self.active_loader = self.loaders[CHAMBER_CASES["SVC"]]
+
+        # Determine which signals are available across ALL cases
+        # Use the union of signals from all loaders (display what's available)
+        all_available = set()
+        for loader in self.loaders.values():
+            all_available.update(loader.signal_list)
+        self.display_signals = [s for s in SIGNAL_DISPLAY_ORDER
+                                if s in all_available]
+
+        # Playback state
+        self.sample_index = 0
+        self.running = True
+        self.sample_accumulator = 0.0
+        self.samples_per_frame = self.active_loader.fs / FRAME_RATE
+
+        # Per-signal display buffers
+        self.signal_buffers = {sig: [] for sig in self.display_signals}
+        self.scan_x = 0
+
+        # Compute initial pressure stats and heart rate
+        self.pressure_stats = {}
+        self.heart_rate = None
+        self._recompute_stats()
+
+        self._create_ui()
+
+        # Start animation and chamber polling
+        self._update_waveform()
+        self._update_chamber()
+
+    def _recompute_stats(self):
+        """Recompute pressure stats and heart rate from the active loader."""
+        self.pressure_stats = {}
+        for sig in self.display_signals:
+            if sig in PRESSURE_SIGNALS and sig in self.active_loader.signals:
+                stats = self.active_loader.compute_pressure_stats(sig)
+                if stats:
+                    self.pressure_stats[sig] = stats
+
+        # Heart rate from ECG
+        ecg_data = self.active_loader.signals.get("II")
+        if ecg_data is not None:
+            self.heart_rate = self._compute_heart_rate_from(ecg_data,
+                                                            self.active_loader.fs)
+        else:
+            self.heart_rate = None
+
+    @staticmethod
+    def _compute_heart_rate_from(ecg_data, fs):
+        """Estimate heart rate from ECG data using R-peak detection."""
+        threshold = max(ecg_data) * 0.6
+        min_distance = int(0.4 * fs)
+        peaks = []
+        i = 0
+        while i < len(ecg_data):
+            if ecg_data[i] > threshold:
+                peak_idx = i
+                while i < len(ecg_data) and ecg_data[i] > threshold:
+                    if ecg_data[i] > ecg_data[peak_idx]:
+                        peak_idx = i
+                    i += 1
+                peaks.append(peak_idx)
+                i = peak_idx + min_distance
+            else:
+                i += 1
+
+        if len(peaks) < 2:
+            return None
+
+        rr_intervals = []
+        for j in range(1, len(peaks)):
+            rr = (peaks[j] - peaks[j - 1]) / fs
+            if 0.3 < rr < 2.0:
+                rr_intervals.append(rr)
+
+        if not rr_intervals:
+            return None
+
+        avg_rr = sum(rr_intervals) / len(rr_intervals)
+        return round(60.0 / avg_rr)
+
+    def _create_ui(self):
+        """Create multi-signal bedside monitor with chamber advancement display."""
+        # Top status bar with chamber info
+        self.frame_top = tk.Frame(self.root, bg="#1a1a1a", height=60)
+        self.frame_top.pack(fill=tk.X, side=tk.TOP)
+        self.frame_top.pack_propagate(False)
+
+        params = CHAMBER_PARAMS[self.current_chamber_name]
+        self.lbl_chamber_name = tk.Label(
+            self.frame_top, text=params["name"].upper(),
+            font=("Helvetica", 18, "bold"), fg="#FFD84D", bg="#1a1a1a"
+        )
+        self.lbl_chamber_name.pack(side=tk.LEFT, padx=20, pady=10)
+
+        self.lbl_steps = tk.Label(
+            self.frame_top, text="Steps: 0",
+            font=("Helvetica", 14), fg="#AAAAAA", bg="#1a1a1a"
+        )
+        self.lbl_steps.pack(side=tk.RIGHT, padx=20, pady=10)
+
+        # Bottom bar
+        self.frame_bottom = tk.Frame(self.root, bg="#1a1a1a", height=50)
+        self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
+        self.frame_bottom.pack_propagate(False)
+
+        self.btn_reset = tk.Button(
+            self.frame_bottom, text="RESET TO SVC",
+            font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
+            activebackground="#666666", command=self.do_reset,
+            padx=20, pady=5
+        )
+        self.btn_reset.pack(side=tk.LEFT, padx=20, pady=10)
+
+        mode_text = ("REAL ADVANCEMENT - Rotary Encoder Active" if _HAS_GPIO
+                     else "REAL ADVANCEMENT - Use +/- keys or Reset button")
+        self.lbl_mode = tk.Label(
+            self.frame_bottom, text=mode_text,
+            font=("Helvetica", 10), fg="#888888", bg="#1a1a1a"
+        )
+        self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
+
+        # Main area: stacked signal rows
+        self.frame_main = tk.Frame(self.root, bg="#000000")
+        self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        self.canvases = {}
+        self.readout_frames = {}
+        READOUT_WIDTH = 180
+
+        for sig_name in self.display_signals:
+            cfg = SIGNAL_CONFIG.get(sig_name, {})
+            color = cfg.get("color", "#FFFFFF")
+
+            # Row frame
+            row = tk.Frame(self.frame_main, bg="#000000")
+            row.pack(fill=tk.BOTH, expand=True, pady=1)
+
+            # Waveform canvas
+            canvas = tk.Canvas(row, bg="#000000", highlightthickness=0)
+            canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            canvas.bind("<Configure>",
+                        lambda e, s=sig_name: self._draw_grid_for_signal(s))
+            self.canvases[sig_name] = canvas
+
+            # Numeric readout panel
+            readout = tk.Frame(row, bg="#000000", width=READOUT_WIDTH)
+            readout.pack(side=tk.RIGHT, fill=tk.Y)
+            readout.pack_propagate(False)
+            self.readout_frames[sig_name] = readout
+
+        # Build initial readouts
+        self._rebuild_readouts()
+
+    def _rebuild_readouts(self):
+        """Rebuild the numeric readout panels for all signals."""
+        for sig_name in self.display_signals:
+            readout = self.readout_frames[sig_name]
+
+            # Clear existing widgets
+            for widget in readout.winfo_children():
+                widget.destroy()
+
+            cfg = SIGNAL_CONFIG.get(sig_name, {})
+            color = cfg.get("color", "#FFFFFF")
+            label = cfg.get("label", sig_name)
+
+            if sig_name in PRESSURE_SIGNALS and sig_name in self.pressure_stats:
+                stats = self.pressure_stats[sig_name]
+
+                lbl_name = tk.Label(
+                    readout, text=label,
+                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+                )
+                lbl_name.pack(pady=(5, 0))
+
+                txt = f"{stats['systolic']}/{stats['diastolic']}"
+                lbl_val = tk.Label(
+                    readout, text=txt,
+                    font=("Arial", 30, "bold"), fg=color, bg="#000000"
+                )
+                lbl_val.pack()
+
+                lbl_mean = tk.Label(
+                    readout, text=f"({stats['mean']})",
+                    font=("Arial", 14), fg=color, bg="#000000"
+                )
+                lbl_mean.pack()
+
+            elif sig_name not in PRESSURE_SIGNALS:
+                lbl_name = tk.Label(
+                    readout, text=label,
+                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+                )
+                lbl_name.pack(pady=(5, 0))
+
+                if self.heart_rate is not None:
+                    lbl_hr = tk.Label(
+                        readout, text=f"{self.heart_rate}",
+                        font=("Arial", 30, "bold"), fg=color, bg="#000000"
+                    )
+                    lbl_hr.pack()
+
+                    lbl_bpm = tk.Label(
+                        readout, text="bpm",
+                        font=("Helvetica", 11), fg=color, bg="#000000"
+                    )
+                    lbl_bpm.pack()
+
+    def _draw_grid_for_signal(self, signal_name):
+        """Draw grid lines for a specific signal's canvas."""
+        canvas = self.canvases.get(signal_name)
+        if canvas is None:
+            return
+
+        canvas.delete("grid")
+        canvas.delete("scale_labels")
+
+        w = canvas.winfo_width()
+        h = canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        cfg = SIGNAL_CONFIG.get(signal_name, {})
+        min_val = cfg.get("min_val", 0)
+        max_val = cfg.get("max_val", 100)
+        grid_major = cfg.get("grid_major", 10)
+        grid_minor = cfg.get("grid_minor", 5)
+        grid_color = cfg.get("grid_color", "#222222")
+        grid_major_color = cfg.get("grid_major_color", "#333333")
+        label_color = cfg.get("label_color", "#888888")
+
+        margin = 5
+        usable = h - 2 * margin
+        val_range = max_val - min_val
+        if val_range <= 0:
+            return
+
+        val = min_val
+        while val <= max_val:
+            y = margin + (max_val - val) / val_range * usable
+            is_major = (abs(val % grid_major) < 0.001 or
+                        abs(val % grid_major - grid_major) < 0.001)
+            if is_major:
+                canvas.create_line(0, y, w, y, fill=grid_major_color,
+                                   width=1, tags="grid")
+                canvas.create_text(
+                    6, y, text=f"{val:g}",
+                    font=("Helvetica", 9), fill=label_color,
+                    anchor=tk.W, tags="scale_labels"
+                )
+            else:
+                canvas.create_line(0, y, w, y, fill=grid_color, tags="grid")
+            val += grid_minor
+
+        label_text = cfg.get("label", signal_name)
+        unit = cfg.get("unit", "")
+        canvas.create_text(
+            w - 10, 12, text=f"{label_text} ({unit})",
+            font=("Helvetica", 10, "bold"), fill=label_color,
+            anchor=tk.E, tags="scale_labels"
+        )
+
+    def _value_to_y(self, signal_name, value, canvas_height):
+        """Convert a signal value to a y-coordinate on its canvas."""
+        cfg = SIGNAL_CONFIG.get(signal_name, {})
+        min_val = cfg.get("min_val", 0)
+        max_val = cfg.get("max_val", 100)
+        margin = 5
+        usable = canvas_height - 2 * margin
+        val_range = max_val - min_val
+        if val_range <= 0:
+            return canvas_height // 2
+        value = max(min_val, min(max_val, value))
+        y = margin + (max_val - value) / val_range * usable
+        return y
+
+    def _get_steps(self) -> int:
+        if _HAS_GPIO:
+            s = int(getattr(encoder, "steps", 0)) - _zero_offset
+            return max(0, s)
+        return _steps_sim
+
+    def do_reset(self):
+        global _steps_sim, _zero_offset
+        if _HAS_GPIO:
+            _zero_offset = int(getattr(encoder, "steps", 0))
+        else:
+            _steps_sim = 0
+
+    def _update_chamber(self):
+        """Poll encoder and switch chamber/waveform case when needed."""
+        if not self.running:
+            return
+
+        steps = self._get_steps()
+        new_chamber = map_steps_to_chamber(steps)
+        params = CHAMBER_PARAMS[new_chamber]
+
+        self.lbl_chamber_name.config(text=params["name"].upper())
+        self.lbl_steps.config(text=f"Steps: {steps}")
+
+        if new_chamber != self.current_chamber_name:
+            self.current_chamber_name = new_chamber
+
+            # Switch to the new chamber's waveform case
+            # No buffer clear — the sweep keeps going seamlessly,
+            # just like a real bedside monitor where the waveform
+            # morphology changes as the catheter moves.
+            new_case = CHAMBER_CASES.get(new_chamber)
+            if new_case and new_case in self.loaders:
+                self.active_loader = self.loaders[new_case]
+                self.sample_index = 0
+                self.samples_per_frame = self.active_loader.fs / FRAME_RATE
+
+                # Update numeric readouts for new chamber
+                self._recompute_stats()
+                self._rebuild_readouts()
+
+                print(f"Chamber: {new_chamber} -> case '{new_case}'")
+
+        self.root.after(50, self._update_chamber)
+
+    def _update_waveform(self):
+        """Advance playback and render all signal traces."""
+        if not self.running:
+            return
+
+        if not self.canvases:
+            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+            return
+
+        first_canvas = list(self.canvases.values())[0]
+        w = first_canvas.winfo_width()
+        if w <= 1:
+            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+            return
+
+        clear_zone_width = 20
+
+        # Calculate how many samples to advance this frame
+        self.sample_accumulator += self.samples_per_frame
+        samples_to_advance = int(self.sample_accumulator)
+        self.sample_accumulator -= samples_to_advance
+
+        # Clear zone ahead of scan line for all signals
+        for sig_name in self.display_signals:
+            self.signal_buffers[sig_name] = [
+                point for point in self.signal_buffers[sig_name]
+                if not (self.scan_x <= point[0] < self.scan_x + clear_zone_width + SCROLL_SPEED)
+            ]
+
+        # Advance through samples and add to buffers
+        for _ in range(SCROLL_SPEED):
+            for sig_name in self.display_signals:
+                if sig_name in self.active_loader.signals:
+                    value = self.active_loader.get_sample(sig_name,
+                                                          self.sample_index)
+                else:
+                    value = 0.0
+                self.signal_buffers[sig_name].append((self.scan_x, value))
+
+            self.scan_x = (self.scan_x + 1) % w
+            self.sample_index = ((self.sample_index + 1)
+                                 % self.active_loader.num_samples)
+
+        # Trim old buffer entries
+        for sig_name in self.display_signals:
+            buf = self.signal_buffers[sig_name]
+            if len(buf) > w * 1.5:
+                self.signal_buffers[sig_name] = buf[-int(w * 1.2):]
+
+        # Redraw all signals
+        self._draw_all_signals()
+        self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+
+    def _draw_all_signals(self):
+        """Render all signal traces on their respective canvases."""
+        clear_zone_width = 20
+
+        for sig_name in self.display_signals:
+            canvas = self.canvases[sig_name]
+            canvas.delete("waveform")
+            canvas.delete("clearzone")
+
+            w = canvas.winfo_width()
+            h = canvas.winfo_height()
+            if w <= 1 or h <= 1:
+                continue
+
+            cfg = SIGNAL_CONFIG.get(sig_name, {})
+            color = cfg.get("color", "#FFFFFF")
+            buf = self.signal_buffers[sig_name]
+
+            waveform_points = []
+            for x, value in buf:
+                if self.scan_x <= x < self.scan_x + clear_zone_width:
+                    continue
+                y = self._value_to_y(sig_name, value, h)
+                waveform_points.append((x, y))
+
+            waveform_points.sort(key=lambda p: p[0])
+
+            if len(waveform_points) >= 2:
+                current_segment = [waveform_points[0]]
+                for i in range(1, len(waveform_points)):
+                    if abs(waveform_points[i][0] - waveform_points[i - 1][0]) > clear_zone_width + 5:
+                        if len(current_segment) >= 2:
+                            pts = []
+                            for px, py in current_segment:
+                                pts.extend([px, py])
+                            canvas.create_line(
+                                *pts, fill=color, width=2,
+                                smooth=False, tags="waveform"
+                            )
+                        current_segment = [waveform_points[i]]
+                    else:
+                        current_segment.append(waveform_points[i])
+
+                if len(current_segment) >= 2:
+                    pts = []
+                    for px, py in current_segment:
+                        pts.extend([px, py])
+                    canvas.create_line(
+                        *pts, fill=color, width=2,
+                        smooth=False, tags="waveform"
+                    )
+
+            canvas.create_rectangle(
+                self.scan_x, 0, self.scan_x + clear_zone_width, h,
+                fill="#000000", outline="", tags="clearzone"
+            )
+
+    def cleanup(self):
+        self.running = False
+
+
+# --- Keyboard controls for mock mode (generated + real-advancement) -----------
 def setup_keyboard_controls(app):
     """Setup keyboard shortcuts for simulation mode."""
     if not _HAS_GPIO and hasattr(app, 'do_reset'):
@@ -1026,9 +1520,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--mode", choices=["generated", "real"], default="generated",
-        help="Waveform mode: 'generated' (math-based, default) or "
-             "'real' (MIMIC-III patient data)"
+        "--mode", choices=["generated", "real", "real-advancement"],
+        default="generated",
+        help="Waveform mode: 'generated' (math-based, default), "
+             "'real' (MIMIC-III patient data), or "
+             "'real-advancement' (real waveforms + encoder chamber switching)"
     )
     parser.add_argument(
         "--case", default=None,
@@ -1067,6 +1563,29 @@ def main():
             return
 
         app = PAC_Simulator_Real(root, loader)
+
+    elif args.mode == "real-advancement":
+        print("PAC Simulator - Real Advancement Mode")
+        print("Loading chamber waveform cases...")
+
+        try:
+            app = PAC_Simulator_RealAdvancement(root)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            return
+
+        # Setup hardware button if available
+        if _HAS_GPIO and reset_button is not None:
+            reset_button.when_pressed = app.do_reset
+
+        # Setup keyboard controls (+/- for mock encoder)
+        setup_keyboard_controls(app)
+
+        if _HAS_GPIO:
+            print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
+        else:
+            print("Use +/- keys to simulate encoder, R to reset")
+
     else:
         app = PAC_Simulator_Generated(root)
 

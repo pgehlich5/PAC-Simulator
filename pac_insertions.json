@@ -1,0 +1,422 @@
+{
+  "total_pac_procedures": 1688,
+  "matched_with_waveforms": 2,
+  "matches": [
+    {
+      "subject_id": "6917",
+      "hadm_id": "194216",
+      "procedure": "PA Catheter",
+      "starttime": "2125-10-22 16:00:00",
+      "endtime": "2125-10-25 16:00:00",
+      "status": "Rewritten",
+      "num_waveform_segments": 3,
+      "waveform_segments": [
+        {
+          "segment_name": "3187965_0001",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p006917",
+          "duration_sec": 7356.0,
+          "all_signals": [
+            "II",
+            "MCL1",
+            "ABP",
+            "PAP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 919500
+        },
+        {
+          "segment_name": "3187965_0003",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p006917",
+          "duration_sec": 67316.8,
+          "all_signals": [
+            "II",
+            "MCL1",
+            "ABP",
+            "PAP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 8414604
+        },
+        {
+          "segment_name": "3187965_0010",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p006917",
+          "duration_sec": 9093.4,
+          "all_signals": [
+            "II",
+            "MCL1",
+            "ABP",
+            "PAP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 1136680
+        }
+      ]
+    },
+    {
+      "subject_id": "7695",
+      "hadm_id": "189563",
+      "procedure": "PA Catheter",
+      "starttime": "2180-05-24 17:34:00",
+      "endtime": "2180-05-28 01:52:00",
+      "status": "FinishedRunning",
+      "num_waveform_segments": 23,
+      "waveform_segments": [
+        {
+          "segment_name": "3376055_0005",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 61.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 7625
+        },
+        {
+          "segment_name": "3376055_0006",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 185.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 23125
+        },
+        {
+          "segment_name": "3376055_0008",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 977.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 122125
+        },
+        {
+          "segment_name": "3376055_0010",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 638.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 79750
+        },
+        {
+          "segment_name": "3376055_0013",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 17892.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 2236500
+        },
+        {
+          "segment_name": "3376055_0014",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 67632.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 8454000
+        },
+        {
+          "segment_name": "3376055_0018",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 46777.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 5847125
+        },
+        {
+          "segment_name": "3376055_0021",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 31545.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 3943125
+        },
+        {
+          "segment_name": "3376055_0023",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 31079.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 3884875
+        },
+        {
+          "segment_name": "3376055_0025",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 8559.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 1069875
+        },
+        {
+          "segment_name": "3376055_0026",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 62.0,
+          "all_signals": [
+            "RESP",
+            "III",
+            "V",
+            "II",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 7750
+        },
+        {
+          "segment_name": "3376055_0029",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 64.0,
+          "all_signals": [
+            "RESP",
+            "III",
+            "MCL",
+            "II",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 8000
+        },
+        {
+          "segment_name": "3376055_0031",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 60.0,
+          "all_signals": [
+            "RESP",
+            "AVL",
+            "MCL",
+            "II",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 7500
+        },
+        {
+          "segment_name": "3376055_0033",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 345.0,
+          "all_signals": [
+            "RESP",
+            "AVF",
+            "MCL",
+            "II",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 43125
+        },
+        {
+          "segment_name": "3376055_0035",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 236.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 29500
+        },
+        {
+          "segment_name": "3376055_0045",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 108.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 13500
+        },
+        {
+          "segment_name": "3376055_0048",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 99.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "PLETH",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 12375
+        },
+        {
+          "segment_name": "3376055_0049",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 75.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 9375
+        },
+        {
+          "segment_name": "3376055_0052",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 67.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "V",
+            "AVR",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 8375
+        },
+        {
+          "segment_name": "3376055_0054",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 227.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 28375
+        },
+        {
+          "segment_name": "3376055_0059",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 220.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 27500
+        },
+        {
+          "segment_name": "3376055_0061",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 580.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 72500
+        },
+        {
+          "segment_name": "3376055_0062",
+          "record_dir": "mimic3wdb-matched/1.0/p00/p007695",
+          "duration_sec": 48598.0,
+          "all_signals": [
+            "RESP",
+            "II",
+            "III",
+            "V",
+            "PAP",
+            "CVP"
+          ],
+          "sampling_rate_hz": 125,
+          "num_samples": 6074750
+        }
+      ]
+    }
+  ]
+}

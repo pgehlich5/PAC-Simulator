@@ -1,0 +1,72 @@
+{
+  "case_name": "pac_insertion_rv",
+  "description": "PAC in Right Ventricle during catheter advancement - Patient p001840",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p001840",
+    "segment_name": "3046879_0008",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p001840",
+    "start_seconds": 1109.0,
+    "duration_seconds": 17.0
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 2125,
+  "signals": [
+    {
+      "signal_name": "RESP",
+      "original_label": "RESP",
+      "units": "pm",
+      "num_samples": 2125,
+      "file": "RESP.csv"
+    },
+    {
+      "signal_name": "PLETH",
+      "original_label": "PLETH",
+      "units": "NU",
+      "num_samples": 2125,
+      "file": "PLETH.csv"
+    },
+    {
+      "signal_name": "II",
+      "original_label": "II",
+      "units": "mV",
+      "num_samples": 2125,
+      "file": "II.csv"
+    },
+    {
+      "signal_name": "V",
+      "original_label": "V",
+      "units": "mV",
+      "num_samples": 2125,
+      "file": "V.csv"
+    },
+    {
+      "signal_name": "AVR",
+      "original_label": "AVR",
+      "units": "mV",
+      "num_samples": 2125,
+      "file": "AVR.csv"
+    },
+    {
+      "signal_name": "ABP",
+      "original_label": "ABP",
+      "units": "mmHg",
+      "num_samples": 2125,
+      "file": "ABP.csv"
+    },
+    {
+      "signal_name": "CVP",
+      "original_label": "CVP",
+      "units": "mmHg",
+      "num_samples": 2125,
+      "file": "CVP.csv"
+    },
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 2125,
+      "file": "PAP.csv"
+    }
+  ]
+}

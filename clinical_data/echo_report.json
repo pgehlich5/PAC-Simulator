@@ -1,0 +1,34 @@
+{
+  "subject_id": 1840,
+  "hadm_id": 154711,
+  "date": "2119-11-28",
+  "indication": "Hypotensive post-op",
+  "test_type": "Portable TTE (Complete)",
+  "vitals_at_time": {
+    "bp": "96/47",
+    "height_in": 70,
+    "weight_lb": 183
+  },
+  "contrast": "Definity",
+  "technical_quality": "Suboptimal (body habitus, ventilator)",
+  "findings": {
+    "left_atrium": "Moderate LA enlargement",
+    "right_atrium": "Moderately dilated RA",
+    "left_ventricle": "Normal LV cavity size. Severely depressed LVEF.",
+    "right_ventricle": "Normal RV chamber size and free wall motion",
+    "aorta": "Normal aortic root diameter",
+    "aortic_valve": "Mildly thickened aortic valve leaflets (3). No AR.",
+    "mitral_valve": "Mildly thickened mitral valve leaflets. Trivial MR.",
+    "tricuspid_valve": "Normal tricuspid valve leaflets with trivial TR.",
+    "pericardium": "No pericardial effusion"
+  },
+  "conclusions": [
+    "Moderate biatrial dilation",
+    "Severely depressed LVEF (estimated 20-25%)",
+    "No significant valvular disease",
+    "No pericardial effusion",
+    "No significant change from prior study (2114)"
+  ],
+  "prior_echo_date": "2114-07-18",
+  "prior_stress_test": "Fixed lesions of apical/septal walls with akinesis/hypokinesis (2112)"
+}

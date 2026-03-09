@@ -106,6 +106,20 @@ CHAMBER_CASES = {
     "PCWP": "pac_insertion_wedge",
 }
 
+
+def load_clinical_vignette():
+    """Load the clinical scenario vignette text from clinical_data/."""
+    vignette_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "clinical_data", "clinical_vignette.txt"
+    )
+    try:
+        with open(vignette_path, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+
 # Waveform generation parameters
 HEART_RATE = 75  # bpm
 SAMPLES_PER_BEAT = 100
@@ -1180,8 +1194,23 @@ class PAC_Simulator_RealAdvancement:
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
 
+        # Outer container: waveform area + clinical panel side by side
+        self.frame_outer = tk.Frame(self.parent, bg="#000000")
+        self.frame_outer.pack(fill=tk.BOTH, expand=True)
+
+        # Clinical scenario panel (right side, collapsible)
+        self.vignette_text = load_clinical_vignette()
+        self.clinical_panel_expanded = False
+        self.frame_clinical = tk.Frame(
+            self.frame_outer, bg=CLINICAL_BG,
+            width=CLINICAL_COLLAPSED_W
+        )
+        self.frame_clinical.pack(side=tk.RIGHT, fill=tk.Y)
+        self.frame_clinical.pack_propagate(False)
+        self._build_clinical_panel_collapsed()
+
         # Main area: stacked signal rows
-        self.frame_main = tk.Frame(self.parent, bg="#000000")
+        self.frame_main = tk.Frame(self.frame_outer, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.canvases = {}
@@ -1491,6 +1520,80 @@ class PAC_Simulator_RealAdvancement:
                 fill="#000000", outline="", tags="clearzone"
             )
 
+    # --- Clinical scenario panel ------------------------------------------------
+
+    def _build_clinical_panel_collapsed(self):
+        """Build the collapsed clinical panel -- a thin toggle strip."""
+        for w in self.frame_clinical.winfo_children():
+            w.destroy()
+        self.frame_clinical.configure(width=CLINICAL_COLLAPSED_W)
+
+        if self.vignette_text is None:
+            return
+
+        btn = tk.Label(
+            self.frame_clinical, text="H\nx",
+            font=("Helvetica", 11, "bold"),
+            fg=CLINICAL_TITLE_FG, bg="#1a1a1a",
+            padx=4, pady=8, cursor="hand2", relief=tk.FLAT,
+        )
+        btn.pack(side=tk.TOP, pady=(10, 0), padx=2)
+        btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
+
+    def _build_clinical_panel_expanded(self):
+        """Build the expanded panel showing the clinical vignette."""
+        for w in self.frame_clinical.winfo_children():
+            w.destroy()
+        self.frame_clinical.configure(width=CLINICAL_EXPANDED_W)
+
+        # Title bar
+        title_bar = tk.Frame(self.frame_clinical, bg=CLINICAL_BORDER, height=32)
+        title_bar.pack(fill=tk.X, side=tk.TOP)
+        title_bar.pack_propagate(False)
+
+        tk.Label(
+            title_bar, text="CLINICAL SCENARIO",
+            font=("Helvetica", 10, "bold"),
+            fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
+        ).pack(side=tk.LEFT, padx=8, pady=4)
+
+        close_btn = tk.Label(
+            title_bar, text=" X ",
+            font=("Helvetica", 10, "bold"),
+            fg="#AAAAAA", bg=CLINICAL_BORDER, cursor="hand2",
+        )
+        close_btn.pack(side=tk.RIGHT, padx=4, pady=4)
+        close_btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
+
+        # Separator
+        tk.Frame(
+            self.frame_clinical, bg=CLINICAL_TITLE_FG, height=1
+        ).pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        # Vignette text (read-only)
+        txt = tk.Text(
+            self.frame_clinical, wrap=tk.WORD,
+            font=("Helvetica", 11), fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
+            relief=tk.FLAT, borderwidth=0, highlightthickness=0,
+            padx=10, pady=4, cursor="arrow",
+        )
+        txt.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 10))
+        txt.insert(tk.END, self.vignette_text)
+        txt.configure(state=tk.DISABLED)
+
+        # Left border accent
+        tk.Frame(
+            self.frame_clinical, bg=CLINICAL_BORDER, width=1
+        ).place(x=0, y=0, relheight=1.0)
+
+    def _toggle_clinical_panel(self):
+        """Toggle clinical scenario panel between collapsed and expanded."""
+        self.clinical_panel_expanded = not self.clinical_panel_expanded
+        if self.clinical_panel_expanded:
+            self._build_clinical_panel_expanded()
+        else:
+            self._build_clinical_panel_collapsed()
+
     def cleanup(self):
         self.running = False
 
@@ -1516,6 +1619,11 @@ def setup_keyboard_controls(app):
         app.root.bind("r", key_reset)
         app.root.bind("R", key_reset)
 
+    # Clinical panel toggle (works regardless of GPIO)
+    if hasattr(app, '_toggle_clinical_panel'):
+        app.root.bind("h", lambda e: app._toggle_clinical_panel())
+        app.root.bind("H", lambda e: app._toggle_clinical_panel())
+
 
 # --- Mode toggle bar ---------------------------------------------------------
 MODES = [
@@ -1527,6 +1635,14 @@ TOGGLE_ACTIVE_BG = "#333333"
 TOGGLE_ACTIVE_FG = "#FFD84D"
 TOGGLE_INACTIVE_BG = "#111111"
 TOGGLE_INACTIVE_FG = "#555555"
+
+# Clinical scenario panel constants
+CLINICAL_BG = "#0a0a0a"
+CLINICAL_BORDER = "#333333"
+CLINICAL_TITLE_FG = "#FFD84D"
+CLINICAL_TEXT_FG = "#CCCCCC"
+CLINICAL_COLLAPSED_W = 30
+CLINICAL_EXPANDED_W = 300
 
 
 def build_toggle_bar(root, active_mode, switch_callback):

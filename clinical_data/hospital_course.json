@@ -1,0 +1,65 @@
+{
+  "subject_id": 1840,
+  "hadm_id": 154711,
+  "chief_complaint": "S/P fall",
+  "hpi": "77 yo M with CAD (EF 20%), HTN, A-fib on coumadin presents after two falls. Reports generalized weakness for 2-3 days. Day prior to admission fell walking to bathroom, no injury. Day of admission fell again after a few steps ('legs gave out'), left leg pain, unable to get up. On floor for 4 hours before found. Denies CP, lightheadedness, SOB, palpitations, LOC.",
+  "ed_course": {
+    "initial_o2_sat": "89% on room air",
+    "cxr": "Right mid lung base opacity - ? pneumonia vs atelectasis",
+    "cta_chest": "No PE. RUL airspace opacity - ? PNA or atelectasis",
+    "ct_head": "Atrophy, prior right frontal stroke, no acute process",
+    "ct_cspine": "Spondylosis, no fracture or dislocation",
+    "hip_xray": "Comminuted left intertrochanteric fracture",
+    "foot_xray": "Comminuted fracture distal shaft 5th metatarsal",
+    "bp_drop": "SBP dropped to 90/45 from 105/63, given 1L NS bolus",
+    "antibiotics_started": "Levofloxacin for possible PNA"
+  },
+  "admission_labs": {
+    "lactate": {"value": 3.4, "units": "mmol/L", "flag": "abnormal"},
+    "wbc": {"value": 15.4, "units": "K/uL", "flag": "abnormal"},
+    "hgb": {"value": 14.0, "units": "g/dL"},
+    "hct": {"value": 39.1, "units": "%"},
+    "platelets": {"value": 254, "units": "K/uL"},
+    "creatinine": {"value": 1.6, "units": "mg/dL", "flag": "abnormal"},
+    "bun": {"value": 36, "units": "mg/dL", "flag": "abnormal"},
+    "troponin_t": {"value": 0.08, "units": "ng/mL", "flag": "abnormal"},
+    "ck": {"value": 2045, "units": "U/L", "flag": "abnormal (rhabdomyolysis from prolonged immobility)"},
+    "inr": {"value": 1.7, "units": "", "note": "On coumadin"},
+    "sodium": {"value": 134, "units": "mEq/L"},
+    "potassium": {"value": 4.8, "units": "mEq/L"}
+  },
+  "timeline": [
+    {
+      "day": "Day 0 (11/26)",
+      "events": "Admitted to ED after fall. Hip and foot fractures identified. Mildly hypoxic. CTA negative for PE. Started on levofloxacin. BP drop in ED."
+    },
+    {
+      "day": "Day 1 (11/27)",
+      "events": "Hematocrits stable (initial drop likely dehydration). Cleared for OR. Overnight: triggered for SBP 89, temp 101.9. Fluid bolus given."
+    },
+    {
+      "day": "Day 2 (11/28)",
+      "events": "ORIF left femur. Received 2u FFP + 2u PRBC. Post-extubation: unresponsive in PACU, A-fib with RVR 130-140s, respiratory distress (ABG 7.12/89/114). REINTUBATED. SBP dropped to 80s. L IJ cordis placed. Stat echo: severely depressed LVEF, old septal akinesis. Transferred to MICU with SBP in 60s, temp 103F."
+    },
+    {
+      "day": "Day 2-3 (11/28-29) ICU",
+      "events": "Started levophed. SWAN-GANZ CATHETER PLACED via L IJ cordis. Hemodynamics: SVR 700, CVP 14, Wedge 18, SV 69, CO 4.5-6.5. Diagnosis: SEPTIC SHOCK (not cardiogenic). 4L NS + 1u PRBC given (Hct 27, mixed venous O2 61%). Levophed weaned off overnight. Cortisol stim test normal."
+    },
+    {
+      "day": "Day 3 (11/29)",
+      "events": "Mental status greatly improved. Extubated without complication. Weaned to PS 5/5 prior."
+    },
+    {
+      "day": "Day 4 (11/30)",
+      "events": "Transferred to floor. Hemodynamically stable, afebrile."
+    },
+    {
+      "day": "Day 5-6 (12/1-2)",
+      "events": "Weaned to 2L O2 but desatted to 88% with crackles at bases. Lasix restarted. Metoprolol restarted and uptitrated. Low-dose ACE restarted. Ecchymosis noted on left foot, XR confirmed 5th metatarsal fracture."
+    },
+    {
+      "day": "Day 7 (12/3)",
+      "events": "Discharged to extended care facility. On 2L O2, satting well. Oriented x3. Antibiotics: levofloxacin + flagyl to complete 10-day course."
+    }
+  ]
+}

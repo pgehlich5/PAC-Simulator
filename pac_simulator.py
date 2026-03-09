@@ -372,11 +372,13 @@ else:
 class PAC_Simulator_Generated:
     """Original generated-waveform mode with chamber advancement."""
 
-    def __init__(self, root):
+    def __init__(self, root, parent=None):
         self.root = root
+        self.parent = parent or root
         self.root.title("PAC Simulator - Philips IntelliVue")
-        self.root.geometry("1280x800")
-        self.root.configure(bg="#000000")
+        if parent is None:
+            self.root.geometry("1280x800")
+            self.root.configure(bg="#000000")
 
         # Waveform data buffer
         self.waveform_buffer = []
@@ -396,7 +398,7 @@ class PAC_Simulator_Generated:
     def _create_ui(self):
         """Create Philips IntelliVue-style interface."""
         # Top status bar
-        self.frame_top = tk.Frame(self.root, bg="#1a1a1a", height=60)
+        self.frame_top = tk.Frame(self.parent, bg="#1a1a1a", height=60)
         self.frame_top.pack(fill=tk.X, side=tk.TOP)
         self.frame_top.pack_propagate(False)
 
@@ -413,7 +415,7 @@ class PAC_Simulator_Generated:
         self.lbl_steps.pack(side=tk.RIGHT, padx=20, pady=10)
 
         # Main area
-        self.frame_main = tk.Frame(self.root, bg="#000000")
+        self.frame_main = tk.Frame(self.parent, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(
@@ -435,7 +437,7 @@ class PAC_Simulator_Generated:
         self.lbl_pressure.pack(expand=True, padx=20)
 
         # Bottom bar
-        self.frame_bottom = tk.Frame(self.root, bg="#1a1a1a", height=50)
+        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=50)
         self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
         self.frame_bottom.pack_propagate(False)
 
@@ -1026,11 +1028,13 @@ class PAC_Simulator_RealAdvancement:
     keyboard +/- keys.
     """
 
-    def __init__(self, root):
+    def __init__(self, root, parent=None):
         self.root = root
+        self.parent = parent or root
         self.root.title("PAC Simulator - Real Advancement Mode")
-        self.root.geometry("1280x800")
-        self.root.configure(bg="#000000")
+        if parent is None:
+            self.root.geometry("1280x800")
+            self.root.configure(bg="#000000")
 
         # Load all chamber cases
         self.loaders = {}
@@ -1138,7 +1142,7 @@ class PAC_Simulator_RealAdvancement:
     def _create_ui(self):
         """Create multi-signal bedside monitor with chamber advancement display."""
         # Top status bar with chamber info
-        self.frame_top = tk.Frame(self.root, bg="#1a1a1a", height=60)
+        self.frame_top = tk.Frame(self.parent, bg="#1a1a1a", height=60)
         self.frame_top.pack(fill=tk.X, side=tk.TOP)
         self.frame_top.pack_propagate(False)
 
@@ -1156,7 +1160,7 @@ class PAC_Simulator_RealAdvancement:
         self.lbl_steps.pack(side=tk.RIGHT, padx=20, pady=10)
 
         # Bottom bar
-        self.frame_bottom = tk.Frame(self.root, bg="#1a1a1a", height=50)
+        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=50)
         self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
         self.frame_bottom.pack_propagate(False)
 
@@ -1177,7 +1181,7 @@ class PAC_Simulator_RealAdvancement:
         self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
 
         # Main area: stacked signal rows
-        self.frame_main = tk.Frame(self.root, bg="#000000")
+        self.frame_main = tk.Frame(self.parent, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.canvases = {}
@@ -1513,6 +1517,54 @@ def setup_keyboard_controls(app):
         app.root.bind("R", key_reset)
 
 
+# --- Mode toggle bar ---------------------------------------------------------
+MODES = [
+    ("real-advancement", "Real Patient"),
+    ("generated", "Simulated Patient"),
+]
+
+TOGGLE_ACTIVE_BG = "#333333"
+TOGGLE_ACTIVE_FG = "#FFD84D"
+TOGGLE_INACTIVE_BG = "#111111"
+TOGGLE_INACTIVE_FG = "#555555"
+
+
+def build_toggle_bar(root, active_mode, switch_callback):
+    """Create a persistent mode toggle bar at the top of the window.
+
+    Returns the toggle frame and a dict of label widgets keyed by mode name
+    so their styles can be updated when the mode changes.
+    """
+    bar = tk.Frame(root, bg="#000000", height=36)
+    bar.pack(fill=tk.X, side=tk.TOP)
+    bar.pack_propagate(False)
+
+    labels = {}
+    for mode_key, display_name in MODES:
+        is_active = (mode_key == active_mode)
+        lbl = tk.Label(
+            bar, text=display_name,
+            font=("Helvetica", 12, "bold"),
+            fg=TOGGLE_ACTIVE_FG if is_active else TOGGLE_INACTIVE_FG,
+            bg=TOGGLE_ACTIVE_BG if is_active else TOGGLE_INACTIVE_BG,
+            padx=20, pady=6, cursor="hand2",
+        )
+        lbl.pack(side=tk.LEFT, padx=(2, 0))
+        lbl.bind("<Button-1>", lambda e, m=mode_key: switch_callback(m))
+        labels[mode_key] = lbl
+
+    return bar, labels
+
+
+def update_toggle_highlight(labels, active_mode):
+    """Update toggle button styles to reflect the active mode."""
+    for mode_key, lbl in labels.items():
+        if mode_key == active_mode:
+            lbl.configure(fg=TOGGLE_ACTIVE_FG, bg=TOGGLE_ACTIVE_BG)
+        else:
+            lbl.configure(fg=TOGGLE_INACTIVE_FG, bg=TOGGLE_INACTIVE_BG)
+
+
 # --- Main entry point --------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
@@ -1520,93 +1572,86 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--mode", choices=["generated", "real", "real-advancement"],
-        default="generated",
-        help="Waveform mode: 'generated' (math-based, default), "
-             "'real' (MIMIC-III patient data), or "
-             "'real-advancement' (real waveforms + encoder chamber switching)"
-    )
-    parser.add_argument(
-        "--case", default=None,
-        help="Case name for real mode (folder in waveform_data/). "
-             "Example: normal_sinus"
+        "--mode", choices=["generated", "real-advancement"],
+        default=None,
+        help="Waveform mode: 'generated' (math-based) or "
+             "'real-advancement' (real waveforms + encoder chamber switching). "
+             "If omitted, a mode selector is shown."
     )
     args = parser.parse_args()
 
     root = tk.Tk()
+    root.title("PAC Simulator - Philips IntelliVue")
+    root.geometry("1280x800")
+    root.configure(bg="#000000")
 
-    if args.mode == "real":
-        if not args.case:
-            # List available cases
-            data_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "waveform_data"
-            )
-            cases = []
-            if os.path.exists(data_dir):
-                cases = [d for d in os.listdir(data_dir)
-                         if os.path.isdir(os.path.join(data_dir, d))]
-            if cases:
-                print("Available cases:", ", ".join(cases))
-                print("Usage: python pac_simulator.py --mode real --case <name>")
-            else:
-                print("No waveform cases found in waveform_data/")
-                print("Run export_waveform_case.py first.")
+    # Persistent toggle bar at the very top
+    current_app = [None]
+    current_mode = [None]
+
+    def launch_mode(mode_name):
+        global _steps_sim
+
+        # Skip if already in this mode
+        if mode_name == current_mode[0]:
             return
 
-        print(f"PAC Simulator - Real Waveform Mode")
-        print(f"Loading case: {args.case}")
+        # Cleanup previous mode
+        if current_app[0] is not None:
+            current_app[0].cleanup()
 
-        try:
-            loader = RealWaveformLoader(args.case)
-        except (FileNotFoundError, ValueError) as e:
-            print(f"ERROR: {e}")
-            return
+        # Clear the content area
+        for w in content_frame.winfo_children():
+            w.destroy()
 
-        app = PAC_Simulator_Real(root, loader)
+        # Unbind previous keyboard controls
+        for key in ("+", "=", "-", "r", "R"):
+            root.unbind(key)
 
-    elif args.mode == "real-advancement":
-        print("PAC Simulator - Real Advancement Mode")
-        print("Loading chamber waveform cases...")
+        # Reset step counter
+        _steps_sim = 0
 
-        try:
-            app = PAC_Simulator_RealAdvancement(root)
-        except ValueError as e:
-            print(f"ERROR: {e}")
-            return
+        # Instantiate the new mode
+        if mode_name == "real-advancement":
+            try:
+                app = PAC_Simulator_RealAdvancement(root, parent=content_frame)
+            except ValueError as e:
+                print(f"ERROR: {e}")
+                return
+        else:
+            app = PAC_Simulator_Generated(root, parent=content_frame)
 
-        # Setup hardware button if available
+        # Setup hardware/keyboard controls
         if _HAS_GPIO and reset_button is not None:
             reset_button.when_pressed = app.do_reset
-
-        # Setup keyboard controls (+/- for mock encoder)
         setup_keyboard_controls(app)
 
-        if _HAS_GPIO:
-            print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
-        else:
-            print("Use +/- keys to simulate encoder, R to reset")
+        current_app[0] = app
+        current_mode[0] = mode_name
+        update_toggle_highlight(toggle_labels, mode_name)
 
+    # Default mode
+    start_mode = args.mode or "real-advancement"
+
+    toggle_bar, toggle_labels = build_toggle_bar(root, start_mode, launch_mode)
+
+    # Content frame fills the rest of the window below the toggle bar
+    content_frame = tk.Frame(root, bg="#000000")
+    content_frame.pack(fill=tk.BOTH, expand=True)
+
+    # Launch the initial mode
+    launch_mode(start_mode)
+
+    if _HAS_GPIO:
+        print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
     else:
-        app = PAC_Simulator_Generated(root)
-
-        # Setup hardware button if available
-        if _HAS_GPIO and reset_button is not None:
-            reset_button.when_pressed = app.do_reset
-
-        # Setup keyboard controls
-        setup_keyboard_controls(app)
-
-        if _HAS_GPIO:
-            print("PAC Simulator - Hardware Mode")
-            print("Rotary encoder on GPIO17/18, Reset button on GPIO2")
-        else:
-            print("PAC Simulator - Mock Mode")
-            print("Use +/- keys to simulate encoder, R to reset")
+        print("Use +/- keys to simulate encoder, R to reset")
 
     try:
         root.mainloop()
     finally:
-        app.cleanup()
+        if current_app[0] is not None:
+            current_app[0].cleanup()
 
 
 if __name__ == "__main__":

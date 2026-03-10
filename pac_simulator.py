@@ -48,7 +48,7 @@ THRESHOLDS = {
     "SVC": 0,
     "RA": 850,
     "RV": 1200,
-    "PA": 1500,
+    "PA": 2600,
     "PCWP": 3000,
 }
 HYST = 20  # steps of hysteresis to prevent chamber flicker

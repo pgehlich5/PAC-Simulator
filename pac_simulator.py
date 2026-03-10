@@ -1663,15 +1663,12 @@ def main():
     root = tk.Tk()
     root.title("PAC Simulator - Philips IntelliVue")
     root.configure(bg="#000000")
-    # Fullscreen: try native first, fall back to manual for Pi compatibility
+    # Fullscreen: use zoomed state as fallback for Pi compatibility
     root.attributes('-fullscreen', True)
     root.update_idletasks()
     if not root.attributes('-fullscreen'):
         root.attributes('-fullscreen', False)
-        root.overrideredirect(True)
-        screen_w = root.winfo_screenwidth()
-        screen_h = root.winfo_screenheight()
-        root.geometry(f"{screen_w}x{screen_h}+0+0")
+        root.state('zoomed')
     root.bind("<Escape>", lambda e: root.destroy())
 
     # Persistent toggle bar at the very top

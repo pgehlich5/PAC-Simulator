@@ -1204,13 +1204,18 @@ class PAC_Simulator_RealAdvancement:
         self.readout_frames = {}
         READOUT_WIDTH = 180
 
-        for sig_name in self.display_signals:
+        # Vertical weight per signal — PAP gets more room
+        self.frame_main.columnconfigure(0, weight=1)
+        ROW_WEIGHT = {"II": 1, "ABP": 2, "PAP": 3}
+
+        for idx, sig_name in enumerate(self.display_signals):
             cfg = SIGNAL_CONFIG.get(sig_name, {})
             color = cfg.get("color", "#FFFFFF")
 
-            # Row frame
+            # Row frame — use grid for weighted row heights
+            self.frame_main.rowconfigure(idx, weight=ROW_WEIGHT.get(sig_name, 1))
             row = tk.Frame(self.frame_main, bg="#000000")
-            row.pack(fill=tk.BOTH, expand=True, pady=1)
+            row.grid(row=idx, column=0, sticky="nsew", pady=1)
 
             # Waveform canvas
             canvas = tk.Canvas(row, bg="#000000", highlightthickness=0)

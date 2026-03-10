@@ -132,7 +132,7 @@ SIGNAL_CONFIG = {
         "color": "#00FF00",       # Green (ECG)
         "label": "ECG II",
         "min_val": -0.5,
-        "max_val": 1.5,
+        "max_val": 1.0,
         "unit": "mV",
         "grid_major": 0.5,
         "grid_minor": 0.25,
@@ -144,7 +144,7 @@ SIGNAL_CONFIG = {
         "color": "#FF3333",       # Red (arterial)
         "label": "ABP",
         "min_val": 0,
-        "max_val": 200,
+        "max_val": 150,
         "unit": "mmHg",
         "grid_major": 50,
         "grid_minor": 25,
@@ -167,7 +167,7 @@ SIGNAL_CONFIG = {
     "CVP": {
         "color": "#00BFFF",       # Blue (central venous)
         "label": "CVP",
-        "min_val": -5,
+        "min_val": 0,
         "max_val": 20,
         "unit": "mmHg",
         "grid_major": 5,
@@ -1669,6 +1669,16 @@ def build_toggle_bar(root, active_mode, switch_callback):
         lbl.bind("<Button-1>", lambda e, m=mode_key: switch_callback(m))
         labels[mode_key] = lbl
 
+    # Quit button on the far right
+    quit_btn = tk.Label(
+        bar, text=" EXIT ",
+        font=("Helvetica", 11, "bold"),
+        fg="#FF4444", bg="#1a1a1a",
+        padx=10, pady=6, cursor="hand2",
+    )
+    quit_btn.pack(side=tk.RIGHT, padx=(0, 8))
+    quit_btn.bind("<Button-1>", lambda e: root.destroy())
+
     return bar, labels
 
 
@@ -1700,6 +1710,8 @@ def main():
     root.title("PAC Simulator - Philips IntelliVue")
     root.geometry("1280x800")
     root.configure(bg="#000000")
+    root.attributes('-fullscreen', True)
+    root.bind("<Escape>", lambda e: root.destroy())
 
     # Persistent toggle bar at the very top
     current_app = [None]

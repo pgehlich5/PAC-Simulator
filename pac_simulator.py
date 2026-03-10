@@ -394,12 +394,14 @@ class PAC_Simulator_Generated:
             self.root.geometry("1280x800")
             self.root.configure(bg="#000000")
 
-        # Waveform data buffer
-        self.waveform_buffer = []
+        # Waveform state
         self.current_waveform = generate_waveform("cvp")
         self.waveform_index = 0
         self.scan_x = 0
         self.current_chamber_name = "SVC"
+        self.last_draw_x = None
+        self.last_draw_y = None
+        self._grid_dirty = False
 
         self._create_ui()
 
@@ -502,7 +504,11 @@ class PAC_Simulator_Generated:
                 self.canvas.create_line(0, y, w, y, fill="#332800", tags="grid")
 
     def _on_canvas_resize(self, event=None):
-        self._draw_grid()
+        self._grid_dirty = True
+        self.canvas.delete("waveform")
+        self.canvas.delete("clearzone")
+        self.last_draw_x = None
+        self.last_draw_y = None
 
     def _get_steps(self) -> int:
         if _HAS_GPIO:
@@ -536,14 +542,31 @@ class PAC_Simulator_Generated:
 
         self.root.after(50, self._update_chamber)
 
+    def _pressure_to_y(self, pressure, canvas_height):
+        """Convert a pressure value to a y-coordinate."""
+        max_pressure = 50
+        margin_top = 20
+        margin_bottom = 20
+        usable_height = canvas_height - margin_top - margin_bottom
+        pressure = max(0, min(max_pressure, pressure))
+        return margin_top + (max_pressure - pressure) / max_pressure * usable_height
+
     def _update_waveform(self):
         if not self.running:
             return
 
+        ms = int(1000 / FRAME_RATE)
+
         w = self.canvas.winfo_width()
-        if w <= 1:
-            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+        h = self.canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            self.root.after(ms, self._update_waveform)
             return
+
+        # Handle deferred grid redraw
+        if self._grid_dirty:
+            self._draw_grid()
+            self._grid_dirty = False
 
         params = CHAMBER_PARAMS[self.current_chamber_name]
         systolic = params["systolic"]
@@ -551,78 +574,38 @@ class PAC_Simulator_Generated:
         color = params["color"]
         clear_zone_width = 20
 
-        self.waveform_buffer = [
-            point for point in self.waveform_buffer
-            if not (self.scan_x <= point['x'] < self.scan_x + clear_zone_width + SCROLL_SPEED)
-        ]
-
+        # Draw SCROLL_SPEED new pixels incrementally
         for _ in range(SCROLL_SPEED):
+            x = self.scan_x
+
+            # Delete old waveform line at the clear zone leading edge
+            clear_x = (x + clear_zone_width) % w
+            self.canvas.delete(f"wf_{clear_x}")
+
             norm_value = self.current_waveform[self.waveform_index]
             pressure = diastolic + (systolic - diastolic) * norm_value
-            self.waveform_buffer.append({
-                'x': self.scan_x, 'pressure': pressure,
-            })
+            y = self._pressure_to_y(pressure, h)
+
+            # Draw 1-pixel line from previous point (skip on wrap)
+            px = self.last_draw_x
+            py = self.last_draw_y
+            if px is not None and py is not None and abs(x - px) <= 1:
+                self.canvas.create_line(
+                    px, py, x, y,
+                    fill=color, width=2, tags=("waveform", f"wf_{x}"))
+
+            self.last_draw_x = x
+            self.last_draw_y = y
             self.scan_x = (self.scan_x + 1) % w
             self.waveform_index = (self.waveform_index + 1) % len(self.current_waveform)
 
-        if len(self.waveform_buffer) > w * 1.5:
-            self.waveform_buffer = self.waveform_buffer[-int(w * 1.2):]
-
-        self._draw_waveform_sweep(color)
-        self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
-
-    def _draw_waveform_sweep(self, color):
-        self.canvas.delete("waveform")
+        # Update clear zone rectangle
         self.canvas.delete("clearzone")
-
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        if w <= 1 or h <= 1 or len(self.waveform_buffer) < 2:
-            return
-
-        max_pressure = 50
-        margin_top = 20
-        margin_bottom = 20
-        usable_height = h - margin_top - margin_bottom
-        clear_zone_width = 20
-
-        waveform_points = []
-        for point in self.waveform_buffer:
-            if self.scan_x <= point['x'] < self.scan_x + clear_zone_width:
-                continue
-            pressure = max(0, min(max_pressure, point['pressure']))
-            y = margin_top + (max_pressure - pressure) / max_pressure * usable_height
-            waveform_points.append((point['x'], y))
-
-        waveform_points.sort(key=lambda p: p[0])
-
-        if len(waveform_points) >= 2:
-            current_segment = [waveform_points[0]]
-            for i in range(1, len(waveform_points)):
-                if abs(waveform_points[i][0] - waveform_points[i - 1][0]) > clear_zone_width + 5:
-                    if len(current_segment) >= 2:
-                        pts = []
-                        for px, py in current_segment:
-                            pts.extend([px, py])
-                        self.canvas.create_line(
-                            *pts, fill=color, width=2, smooth=False, tags="waveform"
-                        )
-                    current_segment = [waveform_points[i]]
-                else:
-                    current_segment.append(waveform_points[i])
-
-            if len(current_segment) >= 2:
-                pts = []
-                for px, py in current_segment:
-                    pts.extend([px, py])
-                self.canvas.create_line(
-                    *pts, fill=color, width=2, smooth=False, tags="waveform"
-                )
-
         self.canvas.create_rectangle(
             self.scan_x, 0, self.scan_x + clear_zone_width, h,
-            fill="#000000", outline="", tags="clearzone"
-        )
+            fill="#000000", outline="", tags="clearzone")
+
+        self.root.after(ms, self._update_waveform)
 
     def cleanup(self):
         self.running = False
@@ -1087,9 +1070,11 @@ class PAC_Simulator_RealAdvancement:
         self.sample_accumulator = 0.0
         self.samples_per_frame = self.active_loader.fs / FRAME_RATE
 
-        # Per-signal display buffers
-        self.signal_buffers = {sig: [] for sig in self.display_signals}
+        # Incremental drawing state
         self.scan_x = 0
+        self.last_draw_x = {sig: None for sig in self.display_signals}
+        self.last_draw_y = {sig: None for sig in self.display_signals}
+        self._grid_dirty = set()    # signals needing deferred grid redraw
 
         # Compute initial pressure stats and heart rate
         self.pressure_stats = {}
@@ -1194,24 +1179,26 @@ class PAC_Simulator_RealAdvancement:
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
 
-        # Outer container: waveform area + clinical panel side by side
-        self.frame_outer = tk.Frame(self.parent, bg="#000000")
-        self.frame_outer.pack(fill=tk.BOTH, expand=True)
-
-        # Clinical scenario panel (right side, collapsible)
-        self.vignette_text = load_clinical_vignette()
-        self.clinical_panel_expanded = False
-        self.frame_clinical = tk.Frame(
-            self.frame_outer, bg=CLINICAL_BG,
-            width=CLINICAL_COLLAPSED_W
-        )
-        self.frame_clinical.pack(side=tk.RIGHT, fill=tk.Y)
-        self.frame_clinical.pack_propagate(False)
-        self._build_clinical_panel_collapsed()
-
         # Main area: stacked signal rows
-        self.frame_main = tk.Frame(self.frame_outer, bg="#000000")
+        self.frame_main = tk.Frame(self.parent, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Clinical scenario overlay (hidden by default)
+        self.vignette_text = load_clinical_vignette()
+        self.clinical_panel_visible = False
+        self._clinical_overlay = None
+
+        # "Patient History" button — top center, always visible
+        if self.vignette_text:
+            self._hx_btn = tk.Label(
+                self.parent, text=" Patient History ",
+                font=("Helvetica", 10, "bold"),
+                fg="#CCCCCC", bg="#333333",
+                padx=8, pady=4, cursor="hand2",
+            )
+            self._hx_btn.place(relx=0.5, y=68, anchor=tk.N)
+            self._hx_btn.bind("<Button-1>",
+                              lambda e: self._toggle_clinical_panel())
 
         self.canvases = {}
         self.readout_frames = {}
@@ -1229,7 +1216,7 @@ class PAC_Simulator_RealAdvancement:
             canvas = tk.Canvas(row, bg="#000000", highlightthickness=0)
             canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             canvas.bind("<Configure>",
-                        lambda e, s=sig_name: self._draw_grid_for_signal(s))
+                        lambda e, s=sig_name: self._on_canvas_configure(s))
             self.canvases[sig_name] = canvas
 
             # Numeric readout panel
@@ -1364,6 +1351,16 @@ class PAC_Simulator_RealAdvancement:
         y = margin + (max_val - value) / val_range * usable
         return y
 
+    def _on_canvas_configure(self, signal_name):
+        """Handle canvas resize — defer grid redraw, clear stale waveform."""
+        self._grid_dirty.add(signal_name)
+        canvas = self.canvases.get(signal_name)
+        if canvas:
+            canvas.delete("waveform")
+            canvas.delete("clearzone")
+        self.last_draw_x[signal_name] = None
+        self.last_draw_y[signal_name] = None
+
     def _get_steps(self) -> int:
         if _HAS_GPIO:
             s = int(getattr(encoder, "steps", 0)) - _zero_offset
@@ -1411,188 +1408,145 @@ class PAC_Simulator_RealAdvancement:
         self.root.after(50, self._update_chamber)
 
     def _update_waveform(self):
-        """Advance playback and render all signal traces."""
+        """Advance playback and draw only the new pixels (incremental)."""
         if not self.running:
             return
 
+        ms = int(1000 / FRAME_RATE)
+
         if not self.canvases:
-            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+            self.root.after(ms, self._update_waveform)
             return
 
         first_canvas = list(self.canvases.values())[0]
         w = first_canvas.winfo_width()
         if w <= 1:
-            self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
+            self.root.after(ms, self._update_waveform)
             return
+
+        # Handle deferred grid redraws (from canvas resize / panel toggle)
+        if self._grid_dirty:
+            for sig in list(self._grid_dirty):
+                self._draw_grid_for_signal(sig)
+            self._grid_dirty.clear()
 
         clear_zone_width = 20
 
-        # Calculate how many samples to advance this frame
-        self.sample_accumulator += self.samples_per_frame
-        samples_to_advance = int(self.sample_accumulator)
-        self.sample_accumulator -= samples_to_advance
-
-        # Clear zone ahead of scan line for all signals
-        for sig_name in self.display_signals:
-            self.signal_buffers[sig_name] = [
-                point for point in self.signal_buffers[sig_name]
-                if not (self.scan_x <= point[0] < self.scan_x + clear_zone_width + SCROLL_SPEED)
-            ]
-
-        # Advance through samples and add to buffers
+        # Draw SCROLL_SPEED new pixels incrementally
         for _ in range(SCROLL_SPEED):
+            x = self.scan_x
+
+            # Delete old waveform lines at the clear zone leading edge
+            clear_x = (x + clear_zone_width) % w
             for sig_name in self.display_signals:
+                self.canvases[sig_name].delete(f"wf_{clear_x}")
+
+            for sig_name in self.display_signals:
+                canvas = self.canvases[sig_name]
+                h = canvas.winfo_height()
+                if h <= 1:
+                    continue
+
+                cfg = SIGNAL_CONFIG.get(sig_name, {})
+                color = cfg.get("color", "#FFFFFF")
+
                 if sig_name in self.active_loader.signals:
-                    value = self.active_loader.get_sample(sig_name,
-                                                          self.sample_index)
+                    value = self.active_loader.get_sample(
+                        sig_name, self.sample_index)
                 else:
                     value = 0.0
-                self.signal_buffers[sig_name].append((self.scan_x, value))
+
+                y = self._value_to_y(sig_name, value, h)
+
+                # Draw 1-pixel line from previous point (skip on wrap)
+                px = self.last_draw_x[sig_name]
+                py = self.last_draw_y[sig_name]
+                if px is not None and py is not None and abs(x - px) <= 1:
+                    canvas.create_line(
+                        px, py, x, y,
+                        fill=color, width=2,
+                        tags=("waveform", f"wf_{x}"))
+
+                self.last_draw_x[sig_name] = x
+                self.last_draw_y[sig_name] = y
 
             self.scan_x = (self.scan_x + 1) % w
             self.sample_index = ((self.sample_index + 1)
                                  % self.active_loader.num_samples)
 
-        # Trim old buffer entries
-        for sig_name in self.display_signals:
-            buf = self.signal_buffers[sig_name]
-            if len(buf) > w * 1.5:
-                self.signal_buffers[sig_name] = buf[-int(w * 1.2):]
-
-        # Redraw all signals
-        self._draw_all_signals()
-        self.root.after(int(1000 / FRAME_RATE), self._update_waveform)
-
-    def _draw_all_signals(self):
-        """Render all signal traces on their respective canvases."""
-        clear_zone_width = 20
-
+        # Update clear zone rectangle for each canvas
         for sig_name in self.display_signals:
             canvas = self.canvases[sig_name]
-            canvas.delete("waveform")
-            canvas.delete("clearzone")
-
-            w = canvas.winfo_width()
             h = canvas.winfo_height()
-            if w <= 1 or h <= 1:
+            if h <= 1:
                 continue
-
-            cfg = SIGNAL_CONFIG.get(sig_name, {})
-            color = cfg.get("color", "#FFFFFF")
-            buf = self.signal_buffers[sig_name]
-
-            waveform_points = []
-            for x, value in buf:
-                if self.scan_x <= x < self.scan_x + clear_zone_width:
-                    continue
-                y = self._value_to_y(sig_name, value, h)
-                waveform_points.append((x, y))
-
-            waveform_points.sort(key=lambda p: p[0])
-
-            if len(waveform_points) >= 2:
-                current_segment = [waveform_points[0]]
-                for i in range(1, len(waveform_points)):
-                    if abs(waveform_points[i][0] - waveform_points[i - 1][0]) > clear_zone_width + 5:
-                        if len(current_segment) >= 2:
-                            pts = []
-                            for px, py in current_segment:
-                                pts.extend([px, py])
-                            canvas.create_line(
-                                *pts, fill=color, width=2,
-                                smooth=False, tags="waveform"
-                            )
-                        current_segment = [waveform_points[i]]
-                    else:
-                        current_segment.append(waveform_points[i])
-
-                if len(current_segment) >= 2:
-                    pts = []
-                    for px, py in current_segment:
-                        pts.extend([px, py])
-                    canvas.create_line(
-                        *pts, fill=color, width=2,
-                        smooth=False, tags="waveform"
-                    )
-
+            canvas.delete("clearzone")
             canvas.create_rectangle(
                 self.scan_x, 0, self.scan_x + clear_zone_width, h,
-                fill="#000000", outline="", tags="clearzone"
-            )
+                fill="#000000", outline="", tags="clearzone")
+
+        self.root.after(ms, self._update_waveform)
 
     # --- Clinical scenario panel ------------------------------------------------
 
-    def _build_clinical_panel_collapsed(self):
-        """Build the collapsed clinical panel -- a thin toggle strip."""
-        for w in self.frame_clinical.winfo_children():
-            w.destroy()
-        self.frame_clinical.configure(width=CLINICAL_COLLAPSED_W)
-
+    def _toggle_clinical_panel(self):
+        """Toggle clinical scenario overlay on/off."""
         if self.vignette_text is None:
             return
 
-        btn = tk.Label(
-            self.frame_clinical, text="H\nx",
-            font=("Helvetica", 11, "bold"),
-            fg=CLINICAL_TITLE_FG, bg="#1a1a1a",
-            padx=4, pady=8, cursor="hand2", relief=tk.FLAT,
-        )
-        btn.pack(side=tk.TOP, pady=(10, 0), padx=2)
-        btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
+        self.clinical_panel_visible = not self.clinical_panel_visible
 
-    def _build_clinical_panel_expanded(self):
-        """Build the expanded panel showing the clinical vignette."""
-        for w in self.frame_clinical.winfo_children():
-            w.destroy()
-        self.frame_clinical.configure(width=CLINICAL_EXPANDED_W)
+        if not self.clinical_panel_visible:
+            # Hide overlay
+            if self._clinical_overlay:
+                self._clinical_overlay.place_forget()
+            return
 
-        # Title bar
-        title_bar = tk.Frame(self.frame_clinical, bg=CLINICAL_BORDER, height=32)
-        title_bar.pack(fill=tk.X, side=tk.TOP)
-        title_bar.pack_propagate(False)
+        # Build overlay if it doesn't exist yet
+        if self._clinical_overlay is None:
+            self._clinical_overlay = tk.Frame(
+                self.parent, bg=CLINICAL_BG,
+                highlightbackground=CLINICAL_BORDER, highlightthickness=2)
 
-        tk.Label(
-            title_bar, text="CLINICAL SCENARIO",
-            font=("Helvetica", 10, "bold"),
-            fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
-        ).pack(side=tk.LEFT, padx=8, pady=4)
+            # Title bar
+            title_bar = tk.Frame(self._clinical_overlay, bg=CLINICAL_BORDER, height=32)
+            title_bar.pack(fill=tk.X, side=tk.TOP)
+            title_bar.pack_propagate(False)
 
-        close_btn = tk.Label(
-            title_bar, text=" X ",
-            font=("Helvetica", 10, "bold"),
-            fg="#AAAAAA", bg=CLINICAL_BORDER, cursor="hand2",
-        )
-        close_btn.pack(side=tk.RIGHT, padx=4, pady=4)
-        close_btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
+            tk.Label(
+                title_bar, text="CLINICAL SCENARIO",
+                font=("Helvetica", 10, "bold"),
+                fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
+            ).pack(side=tk.LEFT, padx=8, pady=4)
 
-        # Separator
-        tk.Frame(
-            self.frame_clinical, bg=CLINICAL_TITLE_FG, height=1
-        ).pack(fill=tk.X, padx=8, pady=(0, 8))
+            close_btn = tk.Label(
+                title_bar, text=" X ",
+                font=("Helvetica", 10, "bold"),
+                fg="#AAAAAA", bg=CLINICAL_BORDER, cursor="hand2",
+            )
+            close_btn.pack(side=tk.RIGHT, padx=4, pady=4)
+            close_btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
 
-        # Vignette text (read-only)
-        txt = tk.Text(
-            self.frame_clinical, wrap=tk.WORD,
-            font=("Helvetica", 11), fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
-            relief=tk.FLAT, borderwidth=0, highlightthickness=0,
-            padx=10, pady=4, cursor="arrow",
-        )
-        txt.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 10))
-        txt.insert(tk.END, self.vignette_text)
-        txt.configure(state=tk.DISABLED)
+            # Separator
+            tk.Frame(
+                self._clinical_overlay, bg=CLINICAL_TITLE_FG, height=1
+            ).pack(fill=tk.X, padx=8, pady=(0, 8))
 
-        # Left border accent
-        tk.Frame(
-            self.frame_clinical, bg=CLINICAL_BORDER, width=1
-        ).place(x=0, y=0, relheight=1.0)
+            # Vignette text
+            txt = tk.Text(
+                self._clinical_overlay, wrap=tk.WORD,
+                font=("Helvetica", 11), fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
+                relief=tk.FLAT, borderwidth=0, highlightthickness=0,
+                padx=10, pady=4, cursor="arrow",
+            )
+            txt.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 10))
+            txt.insert(tk.END, self.vignette_text)
+            txt.configure(state=tk.DISABLED)
 
-    def _toggle_clinical_panel(self):
-        """Toggle clinical scenario panel between collapsed and expanded."""
-        self.clinical_panel_expanded = not self.clinical_panel_expanded
-        if self.clinical_panel_expanded:
-            self._build_clinical_panel_expanded()
-        else:
-            self._build_clinical_panel_collapsed()
+        # Show overlay — top aligned with the Patient History button
+        self._clinical_overlay.place(
+            relx=0.5, y=68, anchor=tk.N,
+            width=CLINICAL_OVERLAY_W, height=CLINICAL_OVERLAY_H)
 
     def cleanup(self):
         self.running = False
@@ -1641,8 +1595,8 @@ CLINICAL_BG = "#0a0a0a"
 CLINICAL_BORDER = "#333333"
 CLINICAL_TITLE_FG = "#FFD84D"
 CLINICAL_TEXT_FG = "#CCCCCC"
-CLINICAL_COLLAPSED_W = 30
-CLINICAL_EXPANDED_W = 300
+CLINICAL_OVERLAY_W = 420
+CLINICAL_OVERLAY_H = 300
 
 
 def build_toggle_bar(root, active_mode, switch_callback):

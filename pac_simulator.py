@@ -132,7 +132,7 @@ SIGNAL_CONFIG = {
         "color": "#00FF00",       # Green (ECG)
         "label": "ECG II",
         "min_val": -0.5,
-        "max_val": 1.0,
+        "max_val": 0.5,
         "unit": "mV",
         "grid_major": 0.5,
         "grid_minor": 0.25,
@@ -179,7 +179,7 @@ SIGNAL_CONFIG = {
 }
 
 # Display priority order — signals are stacked top to bottom in this order
-SIGNAL_DISPLAY_ORDER = ["II", "ABP", "PAP", "CVP"]
+SIGNAL_DISPLAY_ORDER = ["II", "ABP", "PAP"]  # CVP hidden for now (not visible on Pi)
 
 # Pressure signals that get sys/dia/mean readout
 PRESSURE_SIGNALS = {"ABP", "PAP", "CVP"}

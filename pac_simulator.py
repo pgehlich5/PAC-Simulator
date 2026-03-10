@@ -1663,12 +1663,18 @@ def main():
     root = tk.Tk()
     root.title("PAC Simulator - Philips IntelliVue")
     root.configure(bg="#000000")
-    # Fullscreen: use zoomed state as fallback for Pi compatibility
-    root.attributes('-fullscreen', True)
+    # Fullscreen — works on X11; on Wayland (Pi Bookworm) falls back to
+    # maximised window sized to the full screen.
+    try:
+        root.attributes('-fullscreen', True)
+    except Exception:
+        pass
     root.update_idletasks()
     if not root.attributes('-fullscreen'):
         root.attributes('-fullscreen', False)
-        root.state('zoomed')
+        screen_w = root.winfo_screenwidth()
+        screen_h = root.winfo_screenheight()
+        root.geometry(f"{screen_w}x{screen_h}+0+0")
     root.bind("<Escape>", lambda e: root.destroy())
 
     # Persistent toggle bar at the very top

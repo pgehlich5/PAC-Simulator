@@ -3,25 +3,29 @@
 Export a waveform case from MIMIC-III for use in the PAC Simulator.
 
 Downloads a specified time window from a PhysioNet segment and saves each
-signal as a simple CSV file in waveform_data/{case_name}/.  The resulting
-files are self-contained — the simulator never needs internet access.
+signal as a simple CSV file in waveform_data/{patient}/{case_name}/.  The
+resulting files are self-contained — the simulator never needs internet access.
 
 Usage examples:
-  # Export Bookmark 1 — normal sinus rhythm
+  # Export PAP waveform for a specific chamber
   python export_waveform_case.py \
-      --segment 3027112_0001 \
-      --record-dir mimic3wdb-matched/1.0/p00/p000214 \
-      --start 4500 \
-      --duration 120 \
-      --case normal_sinus \
-      --description "Normal sinus rhythm, normal arterial and PA pressures"
+      --patient herbert \
+      --segment 3046879_0008 \
+      --record-dir mimic3wdb-matched/1.0/p00/p001840 \
+      --start 1076 \
+      --duration 16 \
+      --case pap_ra \
+      --description "PAP waveform for Right Atrium - Patient p001840"
 
-  # Export with default 2-minute duration
+  # Export background signals (ECG, ABP)
   python export_waveform_case.py \
-      --segment 3544749_0005 \
-      --record-dir mimic3wdb-matched/1.0/p00/p000020 \
-      --start 0 \
-      --case atrial_paced
+      --patient herbert \
+      --segment 3046879_0008 \
+      --record-dir mimic3wdb-matched/1.0/p00/p001840 \
+      --start 1076 \
+      --duration 120 \
+      --case background \
+      --description "Background signals for continuous playback"
 """
 
 import argparse
@@ -104,10 +108,10 @@ def download_window(segment_name, record_dir, start_sec, duration_sec):
 
 
 def save_case(record, case_name, segment_name, record_dir, start_sec,
-              duration_sec, description=""):
-    """Save each signal as a separate CSV in waveform_data/{case_name}/."""
+              duration_sec, description="", patient="herbert"):
+    """Save each signal as a separate CSV in waveform_data/{patient}/{case_name}/."""
     base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "waveform_data", case_name)
+                            "..", "waveform_data", patient, case_name)
     os.makedirs(base_dir, exist_ok=True)
 
     fs = record.fs
@@ -213,18 +217,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    parser.add_argument("--patient", default="herbert",
+                        help="Patient nickname folder (default: herbert)")
     parser.add_argument("--segment", required=True,
-                        help="Segment name (e.g., 3027112_0001)")
+                        help="Segment name (e.g., 3046879_0008)")
     parser.add_argument("--record-dir", required=True,
                         help="PhysioNet record directory "
-                             "(e.g., mimic3wdb-matched/1.0/p00/p000214)")
+                             "(e.g., mimic3wdb-matched/1.0/p00/p001840)")
     parser.add_argument("--start", type=float, default=0,
                         help="Start time in seconds (default: 0)")
     parser.add_argument("--duration", type=float, default=120,
                         help="Duration in seconds (default: 120 = 2 minutes)")
     parser.add_argument("--case", required=True,
                         help="Case name for the output folder "
-                             "(e.g., normal_sinus)")
+                             "(e.g., pap_ra, background)")
     parser.add_argument("--description", default="",
                         help="Optional description of the clinical scenario")
 
@@ -239,7 +245,7 @@ def main():
     )
     save_case(
         record, args.case, args.segment, args.record_dir,
-        args.start, args.duration, args.description
+        args.start, args.duration, args.description, args.patient
     )
 
     print("\nDone!")

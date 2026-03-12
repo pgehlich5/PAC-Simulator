@@ -89,21 +89,24 @@ CHAMBER_PARAMS = {
     },
 }
 
-# --- Chamber-to-case mapping for real advancement mode -----------------------
+# --- Patient and chamber-to-case mapping for real advancement mode -----------
+DEFAULT_PATIENT = "herbert"
+
 CHAMBER_CASES = {
-    "SVC":  "pac_insertion_ra",      # SVC uses RA waveforms
-    "RA":   "pac_insertion_ra",
-    "RV":   "pac_insertion_rv",
-    "PA":   "pac_insertion_pa",
-    "PCWP": "pac_insertion_wedge",
+    "SVC":  "ra",      # SVC uses RA waveforms
+    "RA":   "ra",
+    "RV":   "rv",
+    "PA":   "pa",
+    "PCWP": "wedge",
 }
 
 
-def load_clinical_vignette():
-    """Load the clinical scenario vignette text from clinical_data/."""
+def load_clinical_vignette(patient=None):
+    """Load the clinical scenario vignette text for a patient."""
+    patient = patient or DEFAULT_PATIENT
     vignette_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "clinical_data", "clinical_vignette.txt"
+        "waveform_data", patient, "clinical_data", "clinical_vignette.txt"
     )
     try:
         with open(vignette_path, "r") as f:
@@ -261,11 +264,12 @@ def generate_waveform(waveform_type: str) -> list:
 class RealWaveformLoader:
     """Load and serve real waveform data from exported CSV cases."""
 
-    def __init__(self, case_name):
+    def __init__(self, case_name, patient=None):
         self.case_name = case_name
+        self.patient = patient or DEFAULT_PATIENT
         self.base_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            "waveform_data", case_name
+            "waveform_data", self.patient, case_name
         )
         self.metadata = {}
         self.signals = {}       # {signal_name: list of float values}
@@ -640,7 +644,7 @@ class PAC_Simulator_RealAdvancement:
         if not self.loaders:
             raise ValueError(
                 "No waveform cases could be loaded for real advancement mode.\n"
-                "Ensure waveform_data/ contains: "
+                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
                 + ", ".join(set(CHAMBER_CASES.values()))
             )
 

@@ -566,7 +566,12 @@ class PAC_Simulator_Generated:
         color = params["color"]
         clear_zone_width = 20
 
-        # Draw SCROLL_SPEED new pixels incrementally
+        # Collect points for batch polyline (1 create_line instead of 8)
+        points = []
+        x_tags = []
+        prev_x = self.last_draw_x
+        prev_y = self.last_draw_y
+
         for _ in range(SCROLL_SPEED):
             x = self.scan_x
 
@@ -578,18 +583,35 @@ class PAC_Simulator_Generated:
             pressure = diastolic + (systolic - diastolic) * norm_value
             y = self._pressure_to_y(pressure, h)
 
-            # Draw 1-pixel line from previous point (skip on wrap)
-            px = self.last_draw_x
-            py = self.last_draw_y
-            if px is not None and py is not None and abs(x - px) <= 1:
-                self.canvas.create_line(
-                    px, py, x, y,
-                    fill=color, width=2, tags=("waveform", f"wf_{x}"))
+            # Check for wrap-around (don't draw across canvas boundary)
+            if prev_x is not None and abs(x - prev_x) > 1:
+                # Flush current polyline before wrap
+                if len(points) >= 4:
+                    self.canvas.create_line(
+                        *points, fill=color, width=2,
+                        tags=("waveform",) + tuple(x_tags))
+                points = []
+                x_tags = []
+            elif not points and prev_x is not None and prev_y is not None:
+                # First point — prepend previous endpoint for continuity
+                points = [prev_x, prev_y]
 
-            self.last_draw_x = x
-            self.last_draw_y = y
+            points.extend([x, y])
+            x_tags.append(f"wf_{x}")
+
+            prev_x = x
+            prev_y = y
             self.scan_x = (self.scan_x + 1) % w
             self.waveform_index = (self.waveform_index + 1) % len(self.current_waveform)
+
+        # Draw batch polyline (1 canvas call instead of SCROLL_SPEED)
+        if len(points) >= 4:
+            self.canvas.create_line(
+                *points, fill=color, width=2,
+                tags=("waveform",) + tuple(x_tags))
+
+        self.last_draw_x = prev_x
+        self.last_draw_y = prev_y
 
         # Update clear zone rectangle
         self.canvas.delete("clearzone")
@@ -1026,7 +1048,10 @@ class PAC_Simulator_RealAdvancement:
 
         clear_zone_width = 20
 
-        # Draw SCROLL_SPEED new pixels incrementally
+        # Collect points for batch polylines (3 create_line instead of 24)
+        sig_points = {s: [] for s in self.display_signals}
+        sig_tags = {s: [] for s in self.display_signals}
+
         for _ in range(SCROLL_SPEED):
             x = self.scan_x
 
@@ -1041,9 +1066,6 @@ class PAC_Simulator_RealAdvancement:
                 if h <= 1:
                     continue
 
-                cfg = SIGNAL_CONFIG.get(sig_name, {})
-                color = cfg.get("color", "#FFFFFF")
-
                 if sig_name in self.active_loader.signals:
                     value = self.active_loader.get_sample(
                         sig_name, self.sample_index)
@@ -1052,14 +1074,26 @@ class PAC_Simulator_RealAdvancement:
 
                 y = self._value_to_y(sig_name, value, h)
 
-                # Draw 1-pixel line from previous point (skip on wrap)
                 px = self.last_draw_x[sig_name]
                 py = self.last_draw_y[sig_name]
-                if px is not None and py is not None and abs(x - px) <= 1:
-                    canvas.create_line(
-                        px, py, x, y,
-                        fill=color, width=2,
-                        tags=("waveform", f"wf_{x}"))
+
+                # Check for wrap-around (don't draw across canvas boundary)
+                if px is not None and abs(x - px) > 1:
+                    # Flush current polyline before wrap
+                    if len(sig_points[sig_name]) >= 4:
+                        cfg = SIGNAL_CONFIG.get(sig_name, {})
+                        color = cfg.get("color", "#FFFFFF")
+                        canvas.create_line(
+                            *sig_points[sig_name], fill=color, width=2,
+                            tags=("waveform",) + tuple(sig_tags[sig_name]))
+                    sig_points[sig_name] = []
+                    sig_tags[sig_name] = []
+                elif not sig_points[sig_name] and px is not None and py is not None:
+                    # First point — prepend previous endpoint for continuity
+                    sig_points[sig_name] = [px, py]
+
+                sig_points[sig_name].extend([x, y])
+                sig_tags[sig_name].append(f"wf_{x}")
 
                 self.last_draw_x[sig_name] = x
                 self.last_draw_y[sig_name] = y
@@ -1067,6 +1101,16 @@ class PAC_Simulator_RealAdvancement:
             self.scan_x = (self.scan_x + 1) % w
             self.sample_index = ((self.sample_index + 1)
                                  % self.active_loader.num_samples)
+
+        # Draw one polyline per signal (3 canvas calls instead of 24)
+        for sig_name in self.display_signals:
+            if len(sig_points[sig_name]) >= 4:
+                canvas = self.canvases[sig_name]
+                cfg = SIGNAL_CONFIG.get(sig_name, {})
+                color = cfg.get("color", "#FFFFFF")
+                canvas.create_line(
+                    *sig_points[sig_name], fill=color, width=2,
+                    tags=("waveform",) + tuple(sig_tags[sig_name]))
 
         # Update clear zone rectangle for each canvas
         for sig_name in self.display_signals:

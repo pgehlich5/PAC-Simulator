@@ -503,9 +503,12 @@ class PAC_Simulator_Generated:
         self.last_draw_y = None
 
     def _get_steps(self) -> int:
+        global _zero_offset
         if _HAS_GPIO:
-            s = int(getattr(encoder, "steps", 0)) - _zero_offset
-            return max(0, s)
+            raw = int(getattr(encoder, "steps", 0))
+            if raw < _zero_offset:
+                _zero_offset = raw  # Follow encoder down so forward turns register immediately
+            return raw - _zero_offset
         return _steps_sim
 
     def do_reset(self):
@@ -956,9 +959,12 @@ class PAC_Simulator_RealAdvancement:
         self.last_draw_y[signal_name] = None
 
     def _get_steps(self) -> int:
+        global _zero_offset
         if _HAS_GPIO:
-            s = int(getattr(encoder, "steps", 0)) - _zero_offset
-            return max(0, s)
+            raw = int(getattr(encoder, "steps", 0))
+            if raw < _zero_offset:
+                _zero_offset = raw  # Follow encoder down so forward turns register immediately
+            return raw - _zero_offset
         return _steps_sim
 
     def do_reset(self):

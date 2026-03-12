@@ -1,0 +1,21 @@
+{
+  "case_name": "pap_ra",
+  "description": "PAP waveform for Right Atrium chamber position - Patient p001840",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p001840",
+    "segment_name": "3046879_0008",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p001840"
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 2000,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 2000,
+      "file": "PAP.csv"
+    }
+  ]
+}

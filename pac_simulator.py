@@ -92,13 +92,20 @@ CHAMBER_PARAMS = {
 # --- Patient and chamber-to-case mapping for real advancement mode -----------
 DEFAULT_PATIENT = "herbert"
 
-CHAMBER_CASES = {
-    "SVC":  "ra",      # SVC uses RA waveforms
-    "RA":   "ra",
-    "RV":   "rv",
-    "PA":   "pa",
-    "PCWP": "wedge",
+# Background case — shared ECG/ABP loop, never switches on chamber change
+BACKGROUND_CASE = "background"
+
+# PAP case per chamber — switches when catheter moves
+PAP_CHAMBER_CASES = {
+    "SVC":  "pap_svc",
+    "RA":   "pap_ra",
+    "RV":   "pap_rv",
+    "PA":   "pap_pa",
+    "PCWP": "pap_wedge",
 }
+
+# Signals that play from the shared background loader (never reset)
+BACKGROUND_SIGNALS = {"II", "ABP"}
 
 
 def load_clinical_vignette(patient=None):
@@ -629,42 +636,52 @@ class PAC_Simulator_RealAdvancement:
             self.root.geometry("1280x800")
             self.root.configure(bg="#000000")
 
-        # Load all chamber cases
-        self.loaders = {}
-        loaded_cases = set()
-        for chamber, case_name in CHAMBER_CASES.items():
-            if case_name not in loaded_cases:
-                try:
-                    self.loaders[case_name] = RealWaveformLoader(case_name)
-                    loaded_cases.add(case_name)
-                except (FileNotFoundError, ValueError) as e:
-                    print(f"WARNING: Could not load case '{case_name}' "
-                          f"for chamber {chamber}: {e}")
-
-        if not self.loaders:
+        # Load background loader (ECG II, ABP — shared, never switches)
+        try:
+            self.bg_loader = RealWaveformLoader(BACKGROUND_CASE)
+        except (FileNotFoundError, ValueError) as e:
             raise ValueError(
-                "No waveform cases could be loaded for real advancement mode.\n"
-                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
-                + ", ".join(set(CHAMBER_CASES.values()))
+                f"Could not load background case '{BACKGROUND_CASE}': {e}\n"
+                f"Ensure waveform_data/{DEFAULT_PATIENT}/{BACKGROUND_CASE}/ "
+                f"exists with II.csv, ABP.csv, and metadata.json"
             )
 
-        # Start in SVC/RA
-        self.current_chamber_name = "SVC"
-        self.active_loader = self.loaders[CHAMBER_CASES["SVC"]]
+        # Load per-chamber PAP loaders
+        self.pap_loaders = {}
+        loaded_pap_cases = set()
+        for chamber, case_name in PAP_CHAMBER_CASES.items():
+            if case_name not in loaded_pap_cases:
+                try:
+                    self.pap_loaders[case_name] = RealWaveformLoader(case_name)
+                    loaded_pap_cases.add(case_name)
+                except (FileNotFoundError, ValueError) as e:
+                    print(f"WARNING: Could not load PAP case '{case_name}' "
+                          f"for chamber {chamber}: {e}")
 
-        # Determine which signals are available across ALL cases
-        # Use the union of signals from all loaders (display what's available)
-        all_available = set()
-        for loader in self.loaders.values():
+        if not self.pap_loaders:
+            raise ValueError(
+                "No PAP waveform cases could be loaded.\n"
+                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
+                + ", ".join(set(PAP_CHAMBER_CASES.values()))
+            )
+
+        # Start in SVC
+        self.current_chamber_name = "SVC"
+        self.active_pap_loader = self.pap_loaders[PAP_CHAMBER_CASES["SVC"]]
+
+        # Determine display signals from background + PAP loaders
+        all_available = set(self.bg_loader.signal_list)
+        for loader in self.pap_loaders.values():
             all_available.update(loader.signal_list)
         self.display_signals = [s for s in SIGNAL_DISPLAY_ORDER
                                 if s in all_available]
 
-        # Playback state
-        self.sample_index = 0
+        # Playback state — two independent sample indices
+        self.bg_sample_index = 0       # never resets on chamber switch
+        self.pap_sample_index = 0      # resets to 0 on chamber switch
         self.running = True
         self.sample_accumulator = 0.0
-        self.samples_per_frame = self.active_loader.fs / FRAME_RATE
+        self.samples_per_frame = self.bg_loader.fs / FRAME_RATE
 
         # Incremental drawing state
         self.scan_x = 0
@@ -684,19 +701,26 @@ class PAC_Simulator_RealAdvancement:
         self._update_chamber()
 
     def _recompute_stats(self):
-        """Recompute pressure stats and heart rate from the active loader."""
+        """Recompute pressure stats and heart rate from appropriate loaders."""
         self.pressure_stats = {}
         for sig in self.display_signals:
-            if sig in PRESSURE_SIGNALS and sig in self.active_loader.signals:
-                stats = self.active_loader.compute_pressure_stats(sig)
+            if sig not in PRESSURE_SIGNALS:
+                continue
+            # Route to correct loader
+            if sig in BACKGROUND_SIGNALS:
+                loader = self.bg_loader
+            else:
+                loader = self.active_pap_loader
+            if sig in loader.signals:
+                stats = loader.compute_pressure_stats(sig)
                 if stats:
                     self.pressure_stats[sig] = stats
 
-        # Heart rate from ECG
-        ecg_data = self.active_loader.signals.get("II")
+        # Heart rate from ECG (always background)
+        ecg_data = self.bg_loader.signals.get("II")
         if ecg_data is not None:
             self.heart_rate = self._compute_heart_rate_from(ecg_data,
-                                                            self.active_loader.fs)
+                                                            self.bg_loader.fs)
         else:
             self.heart_rate = None
 
@@ -993,21 +1017,19 @@ class PAC_Simulator_RealAdvancement:
         if new_chamber != self.current_chamber_name:
             self.current_chamber_name = new_chamber
 
-            # Switch to the new chamber's waveform case
-            # No buffer clear — the sweep keeps going seamlessly,
-            # just like a real bedside monitor where the waveform
-            # morphology changes as the catheter moves.
-            new_case = CHAMBER_CASES.get(new_chamber)
-            if new_case and new_case in self.loaders:
-                self.active_loader = self.loaders[new_case]
-                self.sample_index = 0
-                self.samples_per_frame = self.active_loader.fs / FRAME_RATE
+            # Switch only the PAP loader; background signals (ECG, ABP)
+            # continue uninterrupted — just like a real bedside monitor
+            # where only the PAP morphology changes as the catheter moves.
+            new_pap_case = PAP_CHAMBER_CASES.get(new_chamber)
+            if new_pap_case and new_pap_case in self.pap_loaders:
+                self.active_pap_loader = self.pap_loaders[new_pap_case]
+                self.pap_sample_index = 0  # only PAP restarts
 
                 # Update numeric readouts for new chamber
                 self._recompute_stats()
                 self._rebuild_readouts()
 
-                print(f"Chamber: {new_chamber} -> case '{new_case}'")
+                print(f"Chamber: {new_chamber} -> PAP case '{new_pap_case}'")
 
         self.root.after(50, self._update_chamber)
 
@@ -1054,9 +1076,16 @@ class PAC_Simulator_RealAdvancement:
                 cfg = SIGNAL_CONFIG.get(sig_name, {})
                 color = cfg.get("color", "#FFFFFF")
 
-                if sig_name in self.active_loader.signals:
-                    value = self.active_loader.get_sample(
-                        sig_name, self.sample_index)
+                # Route to correct loader and index
+                if sig_name in BACKGROUND_SIGNALS:
+                    loader = self.bg_loader
+                    idx = self.bg_sample_index
+                else:
+                    loader = self.active_pap_loader
+                    idx = self.pap_sample_index
+
+                if sig_name in loader.signals:
+                    value = loader.get_sample(sig_name, idx)
                 else:
                     value = 0.0
 
@@ -1075,8 +1104,10 @@ class PAC_Simulator_RealAdvancement:
                 self.last_draw_y[sig_name] = y
 
             self.scan_x = (self.scan_x + 1) % w
-            self.sample_index = ((self.sample_index + 1)
-                                 % self.active_loader.num_samples)
+            self.bg_sample_index = ((self.bg_sample_index + 1)
+                                    % self.bg_loader.num_samples)
+            self.pap_sample_index = ((self.pap_sample_index + 1)
+                                     % self.active_pap_loader.num_samples)
 
         # Update clear zone rectangle for each canvas
         for sig_name in self.display_signals:

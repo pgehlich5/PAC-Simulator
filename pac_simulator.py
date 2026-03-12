@@ -115,8 +115,8 @@ def load_clinical_vignette():
 # Waveform generation parameters
 HEART_RATE = 75  # bpm
 SAMPLES_PER_BEAT = 100
-SCROLL_SPEED = 4  # pixels per frame (constant across all chambers)
-FRAME_RATE = 60  # Hz
+SCROLL_SPEED = 8  # pixels per frame (constant across all chambers)
+FRAME_RATE = 30  # Hz  (real bedside monitors run ~25 Hz)
 
 # --- Signal display configuration for real waveform mode -------------------------
 SIGNAL_CONFIG = {

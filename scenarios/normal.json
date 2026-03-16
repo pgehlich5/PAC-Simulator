@@ -1,0 +1,15 @@
+{
+  "name": "Normal Hemodynamics",
+  "heart_rate": 75,
+  "abp": {
+    "systolic": 120,
+    "diastolic": 80
+  },
+  "pap": {
+    "svc":   { "mean": 3 },
+    "ra":    { "mean": 5 },
+    "rv":    { "systolic": 25, "diastolic": 4 },
+    "pa":    { "systolic": 25, "diastolic": 10 },
+    "wedge": { "mean": 10 }
+  }
+}

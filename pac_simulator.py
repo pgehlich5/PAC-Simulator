@@ -14,8 +14,9 @@ Supports two modes:
 
 Usage:
   python pac_simulator.py                          # real advancement mode
-  python pac_simulator.py --mode generated         # generated mode
-  python pac_simulator.py --mode real-advancement   # real waveforms + encoder
+  python pac_simulator.py --mode generated         # generated mode (normal scenario)
+  python pac_simulator.py --mode generated --scenario septic_shock
+  python pac_simulator.py --mode real-advancement  # real waveforms + encoder
 """
 
 import argparse
@@ -25,6 +26,16 @@ import math
 import os
 import time
 import tkinter as tk
+
+import numpy as np
+
+# --- Optional NeuroKit2 import (for synthetic ECG generation) ---------------------
+try:
+    import neurokit2 as nk
+    _HAS_NEUROKIT = True
+except ImportError:
+    nk = None
+    _HAS_NEUROKIT = False
 
 # --- Optional GPIO imports (graceful fallback for Windows/testing) ---------------
 try:
@@ -120,6 +131,36 @@ def load_clinical_vignette(patient=None):
             return f.read().strip()
     except FileNotFoundError:
         return None
+
+
+def load_scenario(scenario_name="normal"):
+    """Load a hemodynamic scenario from scenarios/{name}.json.
+
+    Scenarios define heart rate, ABP pressures, and per-chamber PAP pressures
+    for synthetic waveform generation.
+    """
+    scenario_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "scenarios"
+    )
+    path = os.path.join(scenario_dir, f"{scenario_name}.json")
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"WARNING: Scenario '{scenario_name}' not found at {path}, "
+              f"falling back to defaults.")
+        return {
+            "name": "Default",
+            "heart_rate": 75,
+            "abp": {"systolic": 120, "diastolic": 80},
+            "pap": {
+                "svc":   {"mean": 3},
+                "ra":    {"mean": 5},
+                "rv":    {"systolic": 25, "diastolic": 4},
+                "pa":    {"systolic": 25, "diastolic": 10},
+                "wedge": {"mean": 10},
+            },
+        }
 
 
 # Waveform generation parameters
@@ -372,6 +413,287 @@ class RealWaveformLoader:
         }
 
 
+# =============================================================================
+# Synthetic Waveform Loader — generates waveforms from mathematical models
+# =============================================================================
+
+class SyntheticWaveformLoader:
+    """Generate synthetic waveform data with same interface as RealWaveformLoader.
+
+    Uses NeuroKit2 for ECG and Gaussian-component models for ABP/PAP.
+    Signals are pre-generated into arrays at init time; playback just indexes.
+    """
+
+    def __init__(self, signals_to_generate, scenario_params, duration=120, fs=125):
+        """Create synthetic waveform buffers.
+
+        Args:
+            signals_to_generate: list of signal names, e.g. ["II", "ABP"] or ["PAP"]
+            scenario_params: dict with heart_rate, and signal-specific params:
+                - abp: {systolic, diastolic}
+                - pap: {systolic, diastolic} or {mean} depending on chamber
+                - chamber_key: "svc"|"ra"|"rv"|"pa"|"wedge" (for PAP routing)
+            duration: seconds of waveform to pre-generate
+            fs: sampling rate in Hz
+        """
+        self.fs = fs
+        self.num_samples = int(duration * fs)
+        self.signals = {}
+        self.signal_list = []
+
+        hr = scenario_params.get("heart_rate", 75)
+        samples_per_beat = int(60.0 / hr * fs)
+
+        for sig_name in signals_to_generate:
+            if sig_name == "II":
+                data = self._generate_ecg(hr, duration, fs)
+            elif sig_name == "ABP":
+                abp = scenario_params.get("abp", {"systolic": 120, "diastolic": 80})
+                data = self._generate_abp(
+                    hr, abp["systolic"], abp["diastolic"],
+                    samples_per_beat, duration, fs
+                )
+            elif sig_name == "PAP":
+                pap = scenario_params.get("pap", {"mean": 10})
+                chamber_key = scenario_params.get("chamber_key", "pa")
+                data = self._generate_pap(
+                    hr, pap, chamber_key, samples_per_beat, duration, fs
+                )
+            else:
+                continue
+
+            self.signals[sig_name] = data
+            self.signal_list.append(sig_name)
+
+        # Ensure num_samples matches actual generated length
+        if self.signals:
+            first_sig = next(iter(self.signals.values()))
+            self.num_samples = len(first_sig)
+
+        # Order signal_list by SIGNAL_DISPLAY_ORDER
+        self.signal_list = [s for s in SIGNAL_DISPLAY_ORDER
+                            if s in self.signals]
+
+        print(f"Generated synthetic waveforms: "
+              f"{len(self.signal_list)} signals, "
+              f"{self.num_samples} samples ({self.num_samples / self.fs:.0f}s)")
+        for sig in self.signal_list:
+            cfg = SIGNAL_CONFIG.get(sig, {})
+            print(f"  {sig}: {cfg.get('label', sig)} ({cfg.get('unit', '?')})")
+
+    def get_sample(self, signal_name, index):
+        """Get a single sample, wrapping around for looping."""
+        data = self.signals.get(signal_name)
+        if data is None:
+            return 0.0
+        return data[index % len(data)]
+
+    def compute_pressure_stats(self, signal_name, window_samples=1250):
+        """Compute sys/dia/mean from the signal data."""
+        data = self.signals.get(signal_name)
+        if data is None:
+            return None
+        if not data:
+            return None
+
+        systolic = max(data)
+        diastolic = min(data)
+        mean_val = sum(data) / len(data)
+        return {
+            "systolic": round(systolic),
+            "diastolic": round(diastolic),
+            "mean": round(mean_val),
+        }
+
+    # --- ECG generation via NeuroKit2 ---
+
+    @staticmethod
+    def _generate_ecg(heart_rate, duration, fs):
+        """Generate Lead II ECG using NeuroKit2 ECGSYN model."""
+        if not _HAS_NEUROKIT:
+            # Fallback: flat line if neurokit2 not available
+            print("WARNING: neurokit2 not installed, ECG will be a flat line")
+            return [0.0] * int(duration * fs)
+
+        raw = nk.ecg_simulate(
+            duration=duration,
+            sampling_rate=fs,
+            heart_rate=heart_rate,
+            heart_rate_std=1,
+            method="ecgsyn",
+            noise=0.01,
+        )
+        # NeuroKit2 returns a numpy array with values roughly in [-1, 1] mV range.
+        # Scale to realistic Lead II amplitude (~0.8 mV peak-to-peak).
+        # Our SIGNAL_CONFIG["II"] display range is -0.5 to 0.5 mV.
+        ecg_array = np.array(raw) * 0.4
+        return ecg_array.tolist()
+
+    # --- ABP generation via Gaussian component model ---
+
+    @staticmethod
+    def _generate_abp(heart_rate, systolic, diastolic, samples_per_beat,
+                      duration, fs):
+        """Generate arterial blood pressure waveform.
+
+        Uses superimposed Gaussian components for systolic peak, reflected wave,
+        and dicrotic notch on an exponential diastolic decay.
+        """
+        total_samples = int(duration * fs)
+
+        # Build one beat template (normalized 0-1)
+        beat = np.zeros(samples_per_beat)
+        t = np.linspace(0, 1, samples_per_beat, endpoint=False)
+
+        # Systolic upstroke and peak
+        systolic_peak = np.exp(-((t - 0.12) ** 2) / 0.006)
+
+        # Reflected wave (small secondary hump)
+        reflected = 0.25 * np.exp(-((t - 0.28) ** 2) / 0.008)
+
+        # Dicrotic notch (sharp dip then small bounce)
+        notch_dip = -0.12 * np.exp(-((t - 0.35) ** 2) / 0.0008)
+        notch_bounce = 0.18 * np.exp(-((t - 0.40) ** 2) / 0.005)
+
+        # Diastolic runoff (exponential decay)
+        diastolic_decay = np.where(
+            t > 0.42,
+            0.15 * np.exp(-(t - 0.42) / 0.18),
+            0.0
+        )
+
+        beat = systolic_peak + reflected + notch_dip + notch_bounce + diastolic_decay
+
+        # Normalize to 0-1 range
+        beat_min = beat.min()
+        beat_max = beat.max()
+        if beat_max > beat_min:
+            beat = (beat - beat_min) / (beat_max - beat_min)
+
+        # Scale to actual pressure range
+        pulse_pressure = systolic - diastolic
+        beat_scaled = diastolic + beat * pulse_pressure
+
+        # Tile beats to fill duration, with small random variation
+        rng = np.random.default_rng(42)  # deterministic seed for reproducibility
+        result = np.zeros(total_samples)
+        pos = 0
+        while pos < total_samples:
+            # Add small jitter to each beat (+/- 1.5 mmHg)
+            jitter = rng.normal(0, 1.5)
+            remaining = total_samples - pos
+            chunk = min(samples_per_beat, remaining)
+            result[pos:pos + chunk] = beat_scaled[:chunk] + jitter
+            pos += samples_per_beat
+
+        return result.tolist()
+
+    # --- PAP generation via chamber-specific models ---
+
+    @staticmethod
+    def _generate_pap(heart_rate, pap_params, chamber_key, samples_per_beat,
+                      duration, fs):
+        """Generate pulmonary artery pressure waveform for a specific chamber.
+
+        Chamber morphologies:
+          svc/ra: CVP-like low-pressure a/c/v waves
+          rv:     Steep upstroke, near-zero diastolic, rapid decay
+          pa:     ABP-like shape at lower pressures with dicrotic notch
+          wedge:  Dampened a/v waves (no c wave), higher baseline
+        """
+        total_samples = int(duration * fs)
+        t = np.linspace(0, 1, samples_per_beat, endpoint=False)
+
+        if chamber_key in ("svc", "ra"):
+            # CVP-like waveform with a, c, v waves
+            mean_p = pap_params.get("mean", 5)
+            # Estimate sys/dia from mean for CVP
+            amplitude = max(mean_p * 0.6, 2)  # wave amplitude ~60% of mean
+            systolic = mean_p + amplitude
+            diastolic = max(mean_p - amplitude * 0.5, 0)
+
+            a_wave = 0.35 * np.exp(-((t - 0.12) ** 2) / 0.003)
+            c_wave = 0.15 * np.exp(-((t - 0.25) ** 2) / 0.001)
+            v_wave = 0.30 * np.exp(-((t - 0.55) ** 2) / 0.005)
+            beat = 0.2 + a_wave + c_wave + v_wave
+
+        elif chamber_key == "rv":
+            # RV: rapid rise, plateau, fast drop to near-zero diastolic
+            systolic = pap_params.get("systolic", 25)
+            diastolic = pap_params.get("diastolic", 4)
+
+            beat = np.zeros_like(t)
+            # Rapid upstroke (first 10% of cycle)
+            mask_rise = t < 0.10
+            beat[mask_rise] = t[mask_rise] / 0.10
+            # Plateau with gentle decay (10-35%)
+            mask_plat = (t >= 0.10) & (t < 0.35)
+            beat[mask_plat] = 1.0 - ((t[mask_plat] - 0.10) / 0.25) * 0.25
+            # Fast exponential drop to near zero (35%+)
+            mask_fall = t >= 0.35
+            beat[mask_fall] = 0.75 * np.exp(-(t[mask_fall] - 0.35) / 0.08)
+
+        elif chamber_key == "pa":
+            # PA: ABP-like but at PA pressures, with distinctive dicrotic notch
+            systolic = pap_params.get("systolic", 25)
+            diastolic = pap_params.get("diastolic", 10)
+
+            # Systolic upstroke
+            sys_peak = np.exp(-((t - 0.12) ** 2) / 0.006)
+            # Dicrotic notch (closure of pulmonic valve)
+            notch = -0.18 * np.exp(-((t - 0.36) ** 2) / 0.0006)
+            # Post-notch bounce
+            bounce = 0.15 * np.exp(-((t - 0.41) ** 2) / 0.005)
+            # Diastolic decay
+            decay = np.where(
+                t > 0.44,
+                0.35 * np.exp(-(t - 0.44) / 0.22),
+                0.0
+            )
+            beat = sys_peak + notch + bounce + decay
+
+        elif chamber_key == "wedge":
+            # Wedge/PCWP: dampened a and v waves, no c wave, higher baseline
+            mean_p = pap_params.get("mean", 10)
+            amplitude = max(mean_p * 0.4, 2)
+            systolic = mean_p + amplitude
+            diastolic = max(mean_p - amplitude * 0.5, 0)
+
+            a_wave = 0.30 * np.exp(-((t - 0.15) ** 2) / 0.004)
+            v_wave = 0.35 * np.exp(-((t - 0.52) ** 2) / 0.007)
+            beat = 0.45 + a_wave + v_wave
+
+        else:
+            # Fallback: flat line at mean
+            mean_p = pap_params.get("mean", 10)
+            beat = np.full(samples_per_beat, 0.5)
+            systolic = mean_p + 2
+            diastolic = max(mean_p - 2, 0)
+
+        # Normalize beat to 0-1
+        beat_min = beat.min()
+        beat_max = beat.max()
+        if beat_max > beat_min:
+            beat = (beat - beat_min) / (beat_max - beat_min)
+
+        # Scale to actual pressure range
+        pulse_pressure = systolic - diastolic
+        beat_scaled = diastolic + beat * pulse_pressure
+
+        # Tile beats with small jitter
+        rng = np.random.default_rng(hash(chamber_key) & 0xFFFFFFFF)
+        result = np.zeros(total_samples)
+        pos = 0
+        while pos < total_samples:
+            jitter = rng.normal(0, 0.5)  # smaller jitter for PAP
+            remaining = total_samples - pos
+            chunk = min(samples_per_beat, remaining)
+            result[pos:pos + chunk] = beat_scaled[:chunk] + jitter
+            pos += samples_per_beat
+
+        return result.tolist()
+
+
 # --- Hardware or mock setup ------------------------------------------------------
 if _HAS_GPIO:
     encoder = RotaryEncoder(a=17, b=18, max_steps=10000, wrap=False)
@@ -621,49 +943,33 @@ class PAC_Simulator_Generated:
 # Real Advancement Mode — real waveforms + encoder-driven chamber switching
 # =============================================================================
 class PAC_Simulator_RealAdvancement:
-    """Real waveform mode with encoder-driven chamber advancement.
+    """Waveform mode with encoder-driven chamber advancement.
 
-    Loads a separate MIMIC-III waveform clip for each chamber (RA, RV, PA, Wedge)
-    and switches between them as the user advances the catheter via encoder or
-    keyboard +/- keys.
+    Supports two data sources:
+      - "real": Loads MIMIC-III waveform clips from CSV files
+      - "synthetic": Generates waveforms from math models (NeuroKit2 ECG,
+        Gaussian ABP/PAP) using configurable scenario files
+
+    Both use the same multi-signal display and background/PAP split architecture.
     """
 
-    def __init__(self, root, parent=None):
+    def __init__(self, root, parent=None, data_source="real", scenario=None):
         self.root = root
         self.parent = parent or root
-        self.root.title("PAC Simulator - Real Advancement Mode")
+        self.data_source = data_source
+
+        if data_source == "synthetic":
+            self.root.title("PAC Simulator - Generated Mode")
+        else:
+            self.root.title("PAC Simulator - Real Advancement Mode")
         if parent is None:
             self.root.geometry("1280x800")
             self.root.configure(bg="#000000")
 
-        # Load background loader (ECG II, ABP — shared, never switches)
-        try:
-            self.bg_loader = RealWaveformLoader(BACKGROUND_CASE)
-        except (FileNotFoundError, ValueError) as e:
-            raise ValueError(
-                f"Could not load background case '{BACKGROUND_CASE}': {e}\n"
-                f"Ensure waveform_data/{DEFAULT_PATIENT}/{BACKGROUND_CASE}/ "
-                f"exists with II.csv, ABP.csv, and metadata.json"
-            )
-
-        # Load per-chamber PAP loaders
-        self.pap_loaders = {}
-        loaded_pap_cases = set()
-        for chamber, case_name in PAP_CHAMBER_CASES.items():
-            if case_name not in loaded_pap_cases:
-                try:
-                    self.pap_loaders[case_name] = RealWaveformLoader(case_name)
-                    loaded_pap_cases.add(case_name)
-                except (FileNotFoundError, ValueError) as e:
-                    print(f"WARNING: Could not load PAP case '{case_name}' "
-                          f"for chamber {chamber}: {e}")
-
-        if not self.pap_loaders:
-            raise ValueError(
-                "No PAP waveform cases could be loaded.\n"
-                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
-                + ", ".join(set(PAP_CHAMBER_CASES.values()))
-            )
+        if data_source == "synthetic":
+            self._init_synthetic_loaders(scenario)
+        else:
+            self._init_real_loaders()
 
         # Start in SVC
         self.current_chamber_name = "SVC"
@@ -699,6 +1005,71 @@ class PAC_Simulator_RealAdvancement:
         # Start animation and chamber polling
         self._update_waveform()
         self._update_chamber()
+
+    def _init_real_loaders(self):
+        """Load waveform data from MIMIC-III CSV files."""
+        # Background loader (ECG II, ABP — shared, never switches)
+        try:
+            self.bg_loader = RealWaveformLoader(BACKGROUND_CASE)
+        except (FileNotFoundError, ValueError) as e:
+            raise ValueError(
+                f"Could not load background case '{BACKGROUND_CASE}': {e}\n"
+                f"Ensure waveform_data/{DEFAULT_PATIENT}/{BACKGROUND_CASE}/ "
+                f"exists with II.csv, ABP.csv, and metadata.json"
+            )
+
+        # Per-chamber PAP loaders
+        self.pap_loaders = {}
+        loaded_pap_cases = set()
+        for chamber, case_name in PAP_CHAMBER_CASES.items():
+            if case_name not in loaded_pap_cases:
+                try:
+                    self.pap_loaders[case_name] = RealWaveformLoader(case_name)
+                    loaded_pap_cases.add(case_name)
+                except (FileNotFoundError, ValueError) as e:
+                    print(f"WARNING: Could not load PAP case '{case_name}' "
+                          f"for chamber {chamber}: {e}")
+
+        if not self.pap_loaders:
+            raise ValueError(
+                "No PAP waveform cases could be loaded.\n"
+                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
+                + ", ".join(set(PAP_CHAMBER_CASES.values()))
+            )
+
+    def _init_synthetic_loaders(self, scenario):
+        """Generate waveform data from mathematical models."""
+        scenario = scenario or load_scenario("normal")
+        hr = scenario["heart_rate"]
+        print(f"Loading scenario: {scenario.get('name', 'Unknown')} "
+              f"(HR={hr}, ABP={scenario['abp']['systolic']}/"
+              f"{scenario['abp']['diastolic']})")
+
+        # Background: ECG + ABP (shared, never switches)
+        self.bg_loader = SyntheticWaveformLoader(
+            signals_to_generate=["II", "ABP"],
+            scenario_params={"heart_rate": hr, "abp": scenario["abp"]},
+        )
+
+        # Per-chamber PAP loaders
+        self.pap_loaders = {}
+        chamber_map = {
+            "pap_svc":   "svc",
+            "pap_ra":    "ra",
+            "pap_rv":    "rv",
+            "pap_pa":    "pa",
+            "pap_wedge": "wedge",
+        }
+        for case_name, chamber_key in chamber_map.items():
+            pap_params = scenario["pap"].get(chamber_key, {"mean": 10})
+            self.pap_loaders[case_name] = SyntheticWaveformLoader(
+                signals_to_generate=["PAP"],
+                scenario_params={
+                    "heart_rate": hr,
+                    "pap": pap_params,
+                    "chamber_key": chamber_key,
+                },
+            )
 
     def _recompute_stats(self):
         """Recompute pressure stats and heart rate from appropriate loaders."""
@@ -1293,6 +1664,11 @@ def main():
              "'real-advancement' (real waveforms + encoder chamber switching). "
              "If omitted, a mode selector is shown."
     )
+    parser.add_argument(
+        "--scenario", default="normal",
+        help="Scenario name for generated mode (e.g., 'normal', 'septic_shock'). "
+             "Loads from scenarios/{name}.json"
+    )
     args = parser.parse_args()
 
     root = tk.Tk()
@@ -1330,12 +1706,24 @@ def main():
         # Instantiate the new mode
         if mode_name == "real-advancement":
             try:
-                app = PAC_Simulator_RealAdvancement(root, parent=content_frame)
+                app = PAC_Simulator_RealAdvancement(
+                    root, parent=content_frame, data_source="real"
+                )
             except ValueError as e:
                 print(f"ERROR: {e}")
                 return
         else:
-            app = PAC_Simulator_Generated(root, parent=content_frame)
+            # Generated mode uses synthetic waveforms via same UI
+            try:
+                scenario = load_scenario(args.scenario)
+                app = PAC_Simulator_RealAdvancement(
+                    root, parent=content_frame,
+                    data_source="synthetic", scenario=scenario
+                )
+            except Exception as e:
+                print(f"ERROR loading generated mode: {e}")
+                # Fallback to old generated mode
+                app = PAC_Simulator_Generated(root, parent=content_frame)
 
         # Setup hardware/keyboard controls
         if _HAS_GPIO and reset_button is not None:

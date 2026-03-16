@@ -1,0 +1,15 @@
+{
+  "name": "Septic Shock",
+  "heart_rate": 110,
+  "abp": {
+    "systolic": 85,
+    "diastolic": 50
+  },
+  "pap": {
+    "svc":   { "mean": 12 },
+    "ra":    { "mean": 14 },
+    "rv":    { "systolic": 40, "diastolic": 6 },
+    "pa":    { "systolic": 40, "diastolic": 20 },
+    "wedge": { "mean": 18 }
+  }
+}

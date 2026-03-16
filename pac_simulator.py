@@ -545,24 +545,13 @@ class SyntheticWaveformLoader:
         beat = np.zeros(samples_per_beat)
         t = np.linspace(0, 1, samples_per_beat, endpoint=False)
 
-        # Systolic upstroke and peak
-        systolic_peak = np.exp(-((t - 0.12) ** 2) / 0.006)
+        # Systolic upstroke and peak (wide, rounded)
+        systolic_peak = np.exp(-((t - 0.22) ** 2) / 0.010)
 
-        # Reflected wave (small secondary hump)
-        reflected = 0.25 * np.exp(-((t - 0.28) ** 2) / 0.008)
+        # Dicrotic bump — Gaussian tail provides smooth diastolic runoff
+        dicrotic_bump = 0.28 * np.exp(-((t - 0.50) ** 2) / 0.018)
 
-        # Dicrotic notch (sharp dip then small bounce)
-        notch_dip = -0.12 * np.exp(-((t - 0.35) ** 2) / 0.0008)
-        notch_bounce = 0.18 * np.exp(-((t - 0.40) ** 2) / 0.005)
-
-        # Diastolic runoff (exponential decay)
-        diastolic_decay = np.where(
-            t > 0.42,
-            0.15 * np.exp(-(t - 0.42) / 0.18),
-            0.0
-        )
-
-        beat = systolic_peak + reflected + notch_dip + notch_bounce + diastolic_decay
+        beat = systolic_peak + dicrotic_bump
 
         # Normalize to 0-1 range
         beat_min = beat.min()
@@ -574,17 +563,9 @@ class SyntheticWaveformLoader:
         pulse_pressure = systolic - diastolic
         beat_scaled = diastolic + beat * pulse_pressure
 
-        # Tile beats to fill duration, with small random variation
-        rng = np.random.default_rng(42)  # deterministic seed for reproducibility
-        result = np.zeros(total_samples)
-        pos = 0
-        while pos < total_samples:
-            # Add small jitter to each beat (+/- 1.5 mmHg)
-            jitter = rng.normal(0, 1.5)
-            remaining = total_samples - pos
-            chunk = min(samples_per_beat, remaining)
-            result[pos:pos + chunk] = beat_scaled[:chunk] + jitter
-            pos += samples_per_beat
+        # Tile beats to fill duration
+        num_beats = (total_samples // samples_per_beat) + 1
+        result = np.tile(beat_scaled, num_beats)[:total_samples]
 
         return result.tolist()
 
@@ -612,45 +593,30 @@ class SyntheticWaveformLoader:
             systolic = mean_p + amplitude
             diastolic = max(mean_p - amplitude * 0.5, 0)
 
-            a_wave = 0.35 * np.exp(-((t - 0.12) ** 2) / 0.003)
-            c_wave = 0.15 * np.exp(-((t - 0.25) ** 2) / 0.001)
-            v_wave = 0.30 * np.exp(-((t - 0.55) ** 2) / 0.005)
+            a_wave = 0.35 * np.exp(-((t - 0.12) ** 2) / 0.006)
+            c_wave = 0.15 * np.exp(-((t - 0.25) ** 2) / 0.004)
+            v_wave = 0.30 * np.exp(-((t - 0.55) ** 2) / 0.008)
             beat = 0.2 + a_wave + c_wave + v_wave
 
         elif chamber_key == "rv":
-            # RV: rapid rise, plateau, fast drop to near-zero diastolic
+            # RV: rounded rise, plateau, smooth drop to near-zero diastolic
             systolic = pap_params.get("systolic", 25)
             diastolic = pap_params.get("diastolic", 4)
 
-            beat = np.zeros_like(t)
-            # Rapid upstroke (first 10% of cycle)
-            mask_rise = t < 0.10
-            beat[mask_rise] = t[mask_rise] / 0.10
-            # Plateau with gentle decay (10-35%)
-            mask_plat = (t >= 0.10) & (t < 0.35)
-            beat[mask_plat] = 1.0 - ((t[mask_plat] - 0.10) / 0.25) * 0.25
-            # Fast exponential drop to near zero (35%+)
-            mask_fall = t >= 0.35
-            beat[mask_fall] = 0.75 * np.exp(-(t[mask_fall] - 0.35) / 0.08)
+            # Use a wide Gaussian for the systolic plateau instead of piecewise linear
+            sys_plateau = np.exp(-((t - 0.22) ** 2) / 0.016)
+            beat = sys_plateau
 
         elif chamber_key == "pa":
             # PA: ABP-like but at PA pressures, with distinctive dicrotic notch
             systolic = pap_params.get("systolic", 25)
             diastolic = pap_params.get("diastolic", 10)
 
-            # Systolic upstroke
-            sys_peak = np.exp(-((t - 0.12) ** 2) / 0.006)
-            # Dicrotic notch (closure of pulmonic valve)
-            notch = -0.18 * np.exp(-((t - 0.36) ** 2) / 0.0006)
-            # Post-notch bounce
-            bounce = 0.15 * np.exp(-((t - 0.41) ** 2) / 0.005)
-            # Diastolic decay
-            decay = np.where(
-                t > 0.44,
-                0.35 * np.exp(-(t - 0.44) / 0.22),
-                0.0
-            )
-            beat = sys_peak + notch + bounce + decay
+            # Systolic upstroke (wide, rounded)
+            sys_peak = np.exp(-((t - 0.22) ** 2) / 0.012)
+            # Dicrotic bump — pulmonic valve closure, Gaussian tail = diastolic runoff
+            dicrotic = 0.28 * np.exp(-((t - 0.50) ** 2) / 0.020)
+            beat = sys_peak + dicrotic
 
         elif chamber_key == "wedge":
             # Wedge/PCWP: dampened a and v waves, no c wave, higher baseline
@@ -659,8 +625,8 @@ class SyntheticWaveformLoader:
             systolic = mean_p + amplitude
             diastolic = max(mean_p - amplitude * 0.5, 0)
 
-            a_wave = 0.30 * np.exp(-((t - 0.15) ** 2) / 0.004)
-            v_wave = 0.35 * np.exp(-((t - 0.52) ** 2) / 0.007)
+            a_wave = 0.30 * np.exp(-((t - 0.15) ** 2) / 0.008)
+            v_wave = 0.35 * np.exp(-((t - 0.52) ** 2) / 0.012)
             beat = 0.45 + a_wave + v_wave
 
         else:
@@ -680,16 +646,9 @@ class SyntheticWaveformLoader:
         pulse_pressure = systolic - diastolic
         beat_scaled = diastolic + beat * pulse_pressure
 
-        # Tile beats with small jitter
-        rng = np.random.default_rng(hash(chamber_key) & 0xFFFFFFFF)
-        result = np.zeros(total_samples)
-        pos = 0
-        while pos < total_samples:
-            jitter = rng.normal(0, 0.5)  # smaller jitter for PAP
-            remaining = total_samples - pos
-            chunk = min(samples_per_beat, remaining)
-            result[pos:pos + chunk] = beat_scaled[:chunk] + jitter
-            pos += samples_per_beat
+        # Tile beats to fill duration
+        num_beats = (total_samples // samples_per_beat) + 1
+        result = np.tile(beat_scaled, num_beats)[:total_samples]
 
         return result.tolist()
 

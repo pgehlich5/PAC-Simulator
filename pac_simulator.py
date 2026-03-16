@@ -166,7 +166,7 @@ def load_scenario(scenario_name="normal"):
 # Waveform generation parameters
 HEART_RATE = 75  # bpm
 SAMPLES_PER_BEAT = 100
-SCROLL_SPEED = 8  # pixels per frame (constant across all chambers)
+SCROLL_SPEED = 6  # pixels per frame (constant across all chambers)
 FRAME_RATE = 30  # Hz  (real bedside monitors run ~25 Hz)
 
 # --- Signal display configuration for real waveform mode -------------------------

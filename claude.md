@@ -1,0 +1,95 @@
+# PAC Simulator Project
+
+## What This Is
+A Pulmonary Artery Catheter (PAC) insertion simulator for medical education. Displays real-time waveforms on a Philips IntelliVue-style monitor as a learner advances a virtual catheter through the heart chambers (SVC → RA → RV → PA → PCWP). Built with Python/Tkinter, designed to run on a Raspberry Pi 5 with a rotary encoder for catheter advancement.
+
+## Project Structure
+```
+pac_simulator.py          # Main simulator application (single file, ~1800 lines)
+requirements.txt          # Python dependencies
+scenarios/                # JSON hemodynamic scenario files for generated mode
+  normal.json
+  septic_shock.json
+waveform_data/            # Patient waveform data (one folder per patient)
+  herbert/                # Patient 1: 77M septic shock (p001840)
+  p003914/                # Patient 2 "Grover": 74M cardiogenic shock + severe AS
+    background/           # Shared ECG (II) + ABP for non-RV chambers
+    background_rv/        # ECG + ABP during RV (shows catheter-induced ectopy)
+    pap_svc/              # PAP waveform clips per chamber
+    pap_ra/
+    pap_rv/
+    pap_pa/
+    pap_wedge/
+    clinical_data/        # BigQuery-sourced clinical info + vignette
+    patient.json          # Nickname, demographics, summary
+tools/                    # Supporting scripts
+  waveform_viewer.py      # Streamlit app to browse MIMIC-III PAP waveforms
+  viewer/                 # Viewer modules (data_loader, ui_components, etc.)
+  find_wedge.py           # Automated wedge pressure finder across all segments
+  extract_p003914.py      # Waveform extraction script for Grover
+  pap_records.json        # Catalog of all MIMIC-III segments with PAP signals
+archive/                  # Older/deprecated files
+```
+
+## Architecture
+
+### Two Modes
+- **Real Patient mode** (default): Plays back real MIMIC-III waveforms. Catheter advancement switches PAP clips while ECG+ABP continue uninterrupted.
+- **Generated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files.
+
+### Key Architectural Concepts
+- **Background/PAP split**: ECG and ABP play from a shared background loader that never resets. PAP plays from per-chamber loaders that reset to sample 0 on chamber switch. This mimics a real bedside monitor.
+- **background_rv**: Optional per-patient folder. If present, the background loader swaps to it during RV passage (e.g., to show catheter-induced ectopy) and swaps back when leaving RV.
+- **Patient discovery**: `discover_patients()` scans `waveform_data/` for folders containing `patient.json`. Patients are cyclable via a button in the toggle bar.
+- **Incremental rendering**: Waveforms draw pixel-by-pixel in a sweep line, not full redraws. Critical for Pi performance.
+- **Coarse ECG smoothing**: On load, if an ECG signal has quantization steps >0.01 mV, a 5-point moving average is auto-applied.
+
+### Data Flow (Real Mode)
+1. `RealWaveformLoader` reads `metadata.json` + CSV files from a patient's case folder
+2. `_update_waveform()` runs at FRAME_RATE, drawing SCROLL_SPEED pixels per frame
+3. For each pixel: route II/ABP → `bg_loader`, PAP → `active_pap_loader`
+4. `_update_chamber()` polls encoder steps, maps to chamber, swaps PAP loader on change
+
+## Key Constants
+- `FRAME_RATE = 30` (fps)
+- `SCROLL_SPEED = 6` (pixels per frame = 180 px/s)
+- `DEFAULT_PATIENT = "herbert"`
+- Chamber thresholds: SVC=0, RA=850, RV=1200, PA=2600, PCWP=3000 encoder steps
+
+## Hardware (Pi Deployment)
+- Raspberry Pi 5 with Waveshare 10.1" DSI touchscreen (landscape)
+- Rotary encoder on GPIO17/18 for catheter advancement
+- Reset button on GPIO2
+- Window manager: labwc (Wayland) — NOT X11 or Wayfire
+- Tkinter `-fullscreen` has taskbar issue on Wayland (known limitation)
+- All UI must be touch-friendly (no keyboard on Pi)
+
+## Data Sources
+- **MIMIC-III** waveform database (PhysioNet, credentialed access required)
+- **BigQuery** (`physionet-data.mimiciii_clinical`) for clinical data
+- Waveform data must be removed before any open-source release
+
+## Development Notes
+- Changes to waveform rendering should apply to both Generated and Real modes when applicable
+- When modifying `pac_simulator.py`, the file is large — read specific line ranges rather than the whole file
+- The Streamlit viewer runs from `tools/` directory: `python -m streamlit run waveform_viewer.py`
+- `dismissed_segments.json` in `tools/` tracks segments flagged as bad data in the viewer
+- Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and clinical_data/. See `tools/extract_p003914.py` for an example extraction script.
+
+## Common Commands
+```bash
+# Run simulator (PC)
+python pac_simulator.py
+python pac_simulator.py --patient p003914
+python pac_simulator.py --mode generated --scenario septic_shock
+
+# Run waveform viewer
+cd tools && python -m streamlit run waveform_viewer.py
+
+# Pi: pull updates and run
+cd /home/pgehlich/PAC-Simulator && git pull && python pac_simulator.py
+
+# Pi: install dependencies (note --break-system-packages for Bookworm)
+pip install --break-system-packages -r requirements.txt
+pip install --break-system-packages "numpy<2"  # must stay on numpy 1.x for matplotlib
+```

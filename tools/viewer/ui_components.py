@@ -5,10 +5,13 @@ Streamlit sidebar widgets for patient/segment browsing and display controls.
 import streamlit as st
 from viewer.data_loader import (
     load_catalog,
+    build_patient_index,
     get_patient_list,
     get_segments_for_patient,
     format_segment_label,
     format_duration,
+    load_dismissed,
+    save_dismissed,
 )
 
 
@@ -31,14 +34,22 @@ def render_sidebar():
 
     # --- Patient selector ---
     st.sidebar.header("Patient")
-    patient_id = st.sidebar.selectbox(
-        "Select patient",
-        options=patient_list,
-        format_func=lambda pid: (
+
+    # Only override selectbox position right after a dismiss; otherwise
+    # let Streamlit's own widget state remember the user's selection.
+    selectbox_kwargs = {
+        "label": "Select patient",
+        "options": patient_list,
+        "format_func": lambda pid: (
             f"{pid} ({patient_index[pid]['total_segments']} segments, "
             f"{format_duration(patient_index[pid]['total_duration_min'])})"
         ),
-    )
+    }
+    if "_patient_idx" in st.session_state:
+        idx = st.session_state.pop("_patient_idx")
+        selectbox_kwargs["index"] = min(idx, len(patient_list) - 1)
+
+    patient_id = st.sidebar.selectbox(**selectbox_kwargs)
 
     if not patient_id:
         return {"patient_id": None, "segment": None}
@@ -60,6 +71,28 @@ def render_sidebar():
 
     if not segment:
         return {"patient_id": patient_id, "segment": None}
+
+    # --- Dismiss button ---
+    if st.sidebar.button("🚫 Dismiss Segment",
+                         help="Hide this segment from the list (bad data)"):
+        dismissed = load_dismissed()
+        dismissed.add(segment["segment_name"])
+        save_dismissed(dismissed)
+
+        # After dismiss, figure out where the selectbox should land
+        remaining = [s for s in segments if s["segment_name"] != segment["segment_name"]]
+        cur = patient_list.index(patient_id)
+        if remaining:
+            # Patient still has segments — stay on same patient
+            st.session_state["_patient_idx"] = cur
+        else:
+            # Patient will be removed from list — next patient slides
+            # into the same index, so just clamp to end of new list
+            new_len = len(patient_list) - 1  # one patient being removed
+            st.session_state["_patient_idx"] = min(cur, max(0, new_len - 1))
+
+        st.cache_data.clear()
+        st.rerun()
 
     # --- Time controls ---
     st.sidebar.header("Time Window")
@@ -146,6 +179,24 @@ def render_sidebar():
         if checked:
             visible_signals.append(sig)
 
+    # --- Dismissed segments info ---
+    dismissed = load_dismissed()
+    if dismissed:
+        st.sidebar.divider()
+        st.sidebar.caption(f"🚫 {len(dismissed)} segments dismissed")
+        col_undo, col_show = st.sidebar.columns(2)
+        with col_undo:
+            if st.button("Undo Last"):
+                dismissed_list = sorted(dismissed)
+                dismissed.remove(dismissed_list[-1])
+                save_dismissed(dismissed)
+                st.cache_data.clear()
+                st.rerun()
+        with col_show:
+            show_dismissed = st.checkbox("Show list", key="show_dismissed_list")
+        if show_dismissed:
+            st.sidebar.code("\n".join(sorted(dismissed)))
+
     return {
         "patient_id": patient_id,
         "segment": segment,
@@ -155,34 +206,8 @@ def render_sidebar():
     }
 
 
-@st.cache_data
 def _get_patient_index():
-    """Load catalog and build patient index (cached)."""
+    """Load catalog and build patient index, filtering out dismissed segments."""
     catalog = load_catalog()
-    segments = catalog["segments"]
-    # build_patient_index expects a list of dicts
-    patients = {}
-    for seg in segments:
-        parts = seg["record_dir"].rstrip("/").split("/")
-        patient_id = parts[-1]
-
-        if patient_id not in patients:
-            patients[patient_id] = {
-                "patient_id": patient_id,
-                "segments": [],
-                "total_segments": 0,
-                "total_duration_min": 0.0,
-                "signal_set": set(),
-            }
-
-        p = patients[patient_id]
-        p["segments"].append(seg)
-        p["total_segments"] += 1
-        p["total_duration_min"] += seg.get("duration_min", 0)
-        p["signal_set"].update(seg.get("all_signals", []))
-
-    for p in patients.values():
-        p["segments"].sort(key=lambda s: (s["record_path"], s["segment_index"]))
-        p["signal_set"] = sorted(p["signal_set"])
-
-    return patients
+    dismissed = load_dismissed()
+    return build_patient_index(catalog["segments"], dismissed=dismissed)

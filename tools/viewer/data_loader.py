@@ -3,7 +3,14 @@ Catalog loading and patient-centric data grouping for the waveform viewer.
 """
 
 import json
+import os
 import streamlit as st
+
+
+# Path for persisted dismissed segments list
+DISMISSED_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "dismissed_segments.json"
+)
 
 
 @st.cache_data
@@ -13,9 +20,25 @@ def load_catalog(json_path="pap_records.json"):
         return json.load(f)
 
 
-@st.cache_data
-def build_patient_index(_catalog_segments):
-    """Group segments by patient ID.
+def load_dismissed():
+    """Load set of dismissed segment names from JSON file.
+
+    Not cached — must always reflect latest state after a dismiss action.
+    """
+    if os.path.exists(DISMISSED_PATH):
+        with open(DISMISSED_PATH) as f:
+            return set(json.load(f))
+    return set()
+
+
+def save_dismissed(dismissed_set):
+    """Save dismissed segment names to JSON file."""
+    with open(DISMISSED_PATH, "w") as f:
+        json.dump(sorted(dismissed_set), f, indent=2)
+
+
+def build_patient_index(catalog_segments, dismissed=None):
+    """Group segments by patient ID, excluding dismissed segments.
 
     Returns dict mapping patient_id -> {patient_id, segments, total_segments,
     total_duration_min, signal_set}.
@@ -23,8 +46,13 @@ def build_patient_index(_catalog_segments):
     Patient ID extracted from record_dir:
         "mimic3wdb-matched/1.0/p00/p000079" -> "p000079"
     """
+    dismissed = dismissed or set()
     patients = {}
-    for seg in _catalog_segments:
+    for seg in catalog_segments:
+        # Skip dismissed segments
+        if seg["segment_name"] in dismissed:
+            continue
+
         parts = seg["record_dir"].rstrip("/").split("/")
         patient_id = parts[-1]
 

@@ -103,8 +103,11 @@ CHAMBER_PARAMS = {
 # --- Patient and chamber-to-case mapping for real advancement mode -----------
 DEFAULT_PATIENT = "herbert"
 
-# Background case — shared ECG/ABP loop, never switches on chamber change
+# Background cases — shared ECG/ABP loop, normally never switches on chamber change.
+# BACKGROUND_RV_CASE is used (if it exists) during RV passage to show catheter-
+# induced ectopy on the ECG.  Falls back to BACKGROUND_CASE when not in RV.
 BACKGROUND_CASE = "background"
+BACKGROUND_RV_CASE = "background_rv"
 
 # PAP case per chamber — switches when catheter moves
 PAP_CHAMBER_CASES = {
@@ -117,6 +120,33 @@ PAP_CHAMBER_CASES = {
 
 # Signals that play from the shared background loader (never reset)
 BACKGROUND_SIGNALS = {"II", "ABP"}
+
+
+def discover_patients():
+    """Scan waveform_data/ for available patient folders.
+
+    A valid patient folder must contain a patient.json and at least one
+    pap_* subfolder.  Returns a list of dicts sorted by nickname:
+        [{"folder": "herbert", "nickname": "Herbert", ...}, ...]
+    """
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "waveform_data")
+    patients = []
+    if not os.path.isdir(data_dir):
+        return patients
+    for name in sorted(os.listdir(data_dir)):
+        pj = os.path.join(data_dir, name, "patient.json")
+        if os.path.isfile(pj):
+            try:
+                with open(pj) as f:
+                    info = json.load(f)
+                info["folder"] = name
+                patients.append(info)
+            except (json.JSONDecodeError, KeyError):
+                pass
+    # Sort by nickname (or folder name as fallback)
+    patients.sort(key=lambda p: (p.get("nickname") or p["folder"]).lower())
+    return patients
 
 
 def load_clinical_vignette(patient=None):
@@ -359,6 +389,19 @@ class RealWaveformLoader:
                 f"No displayable signals found in case '{self.case_name}'. "
                 f"Available: {list(available.keys())}"
             )
+
+        # Smooth coarsely-quantized ECG signals to remove stair-step artifacts.
+        # Some MIMIC-III records have low ADC resolution (~0.04 mV steps vs
+        # typical ~0.004 mV).  A small moving-average filter fills in the gaps.
+        if "II" in self.signals:
+            arr = np.array(self.signals["II"])
+            unique_steps = np.diff(np.sort(np.unique(arr)))
+            if len(unique_steps) > 0 and unique_steps.min() > 0.01:
+                # Coarse quantization detected — apply 5-point moving average
+                kernel = np.ones(5) / 5
+                smoothed = np.convolve(arr, kernel, mode="same")
+                self.signals["II"] = smoothed.tolist()
+                print(f"  Smoothed coarse ECG (step={unique_steps.min():.4f} mV)")
 
         print(f"Loaded case '{self.case_name}': "
               f"{len(self.signal_list)} signals, "
@@ -912,10 +955,12 @@ class PAC_Simulator_RealAdvancement:
     Both use the same multi-signal display and background/PAP split architecture.
     """
 
-    def __init__(self, root, parent=None, data_source="real", scenario=None):
+    def __init__(self, root, parent=None, data_source="real", scenario=None,
+                 patient=None):
         self.root = root
         self.parent = parent or root
         self.data_source = data_source
+        self.patient = patient or DEFAULT_PATIENT
 
         if data_source == "synthetic":
             self.root.title("PAC Simulator - Generated Mode")
@@ -967,15 +1012,28 @@ class PAC_Simulator_RealAdvancement:
 
     def _init_real_loaders(self):
         """Load waveform data from MIMIC-III CSV files."""
-        # Background loader (ECG II, ABP — shared, never switches)
+        pt = self.patient
+
+        # Background loader (ECG II, ABP — shared, normally never switches)
         try:
-            self.bg_loader = RealWaveformLoader(BACKGROUND_CASE)
+            self.bg_loader = RealWaveformLoader(BACKGROUND_CASE, patient=pt)
         except (FileNotFoundError, ValueError) as e:
             raise ValueError(
                 f"Could not load background case '{BACKGROUND_CASE}': {e}\n"
-                f"Ensure waveform_data/{DEFAULT_PATIENT}/{BACKGROUND_CASE}/ "
+                f"Ensure waveform_data/{pt}/{BACKGROUND_CASE}/ "
                 f"exists with II.csv, ABP.csv, and metadata.json"
             )
+        self.bg_loader_default = self.bg_loader  # remember the normal bg
+
+        # Optional RV-specific background (e.g., catheter-induced ectopy)
+        self.bg_loader_rv = None
+        try:
+            self.bg_loader_rv = RealWaveformLoader(BACKGROUND_RV_CASE,
+                                                   patient=pt)
+            print(f"Loaded RV-specific background for {pt} "
+                  f"({self.bg_loader_rv.num_samples} samples)")
+        except (FileNotFoundError, ValueError):
+            pass  # no RV background — that's fine, just use the default
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -983,7 +1041,8 @@ class PAC_Simulator_RealAdvancement:
         for chamber, case_name in PAP_CHAMBER_CASES.items():
             if case_name not in loaded_pap_cases:
                 try:
-                    self.pap_loaders[case_name] = RealWaveformLoader(case_name)
+                    self.pap_loaders[case_name] = RealWaveformLoader(
+                        case_name, patient=pt)
                     loaded_pap_cases.add(case_name)
                 except (FileNotFoundError, ValueError) as e:
                     print(f"WARNING: Could not load PAP case '{case_name}' "
@@ -992,7 +1051,7 @@ class PAC_Simulator_RealAdvancement:
         if not self.pap_loaders:
             raise ValueError(
                 "No PAP waveform cases could be loaded.\n"
-                f"Ensure waveform_data/{DEFAULT_PATIENT}/ contains: "
+                f"Ensure waveform_data/{pt}/ contains: "
                 + ", ".join(set(PAP_CHAMBER_CASES.values()))
             )
 
@@ -1009,6 +1068,8 @@ class PAC_Simulator_RealAdvancement:
             signals_to_generate=["II", "ABP"],
             scenario_params={"heart_rate": hr, "abp": scenario["abp"]},
         )
+        self.bg_loader_default = self.bg_loader
+        self.bg_loader_rv = None  # synthetic mode has no separate RV background
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -1134,7 +1195,7 @@ class PAC_Simulator_RealAdvancement:
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         # Clinical scenario overlay (hidden by default)
-        self.vignette_text = load_clinical_vignette()
+        self.vignette_text = load_clinical_vignette(self.patient)
         self.clinical_panel_visible = False
         self._clinical_overlay = None
 
@@ -1345,15 +1406,27 @@ class PAC_Simulator_RealAdvancement:
         self.lbl_steps.config(text=f"Steps: {steps}")
 
         if new_chamber != self.current_chamber_name:
+            old_chamber = self.current_chamber_name
             self.current_chamber_name = new_chamber
 
-            # Switch only the PAP loader; background signals (ECG, ABP)
-            # continue uninterrupted — just like a real bedside monitor
-            # where only the PAP morphology changes as the catheter moves.
+            # Switch the PAP loader for the new chamber
             new_pap_case = PAP_CHAMBER_CASES.get(new_chamber)
             if new_pap_case and new_pap_case in self.pap_loaders:
                 self.active_pap_loader = self.pap_loaders[new_pap_case]
                 self.pap_sample_index = 0  # only PAP restarts
+
+                # Swap background loader for RV if an RV-specific
+                # background exists (e.g., catheter-induced ectopy)
+                if (self.data_source == "real"
+                        and getattr(self, "bg_loader_rv", None) is not None):
+                    if new_chamber == "RV" and old_chamber != "RV":
+                        self.bg_loader = self.bg_loader_rv
+                        self.bg_sample_index = 0
+                        print("  -> Switched to RV background (ectopy)")
+                    elif new_chamber != "RV" and old_chamber == "RV":
+                        self.bg_loader = self.bg_loader_default
+                        self.bg_sample_index = 0
+                        print("  -> Switched back to default background")
 
                 # Update numeric readouts for new chamber
                 self._recompute_stats()
@@ -1628,6 +1701,11 @@ def main():
         help="Scenario name for generated mode (e.g., 'normal', 'septic_shock'). "
              "Loads from scenarios/{name}.json"
     )
+    parser.add_argument(
+        "--patient", default=None,
+        help="Patient folder name (e.g., 'herbert', 'p003914'). "
+             "If omitted, the first discovered patient is used."
+    )
     args = parser.parse_args()
 
     root = tk.Tk()
@@ -1636,15 +1714,40 @@ def main():
     root.attributes('-fullscreen', True)
     root.bind("<Escape>", lambda e: root.destroy())
 
+    # Discover available patients
+    available_patients = discover_patients()
+    if not available_patients:
+        print("ERROR: No patients found in waveform_data/")
+        return
+    for p in available_patients:
+        nick = p.get("nickname") or p["folder"]
+        print(f"  Found patient: {nick} ({p['folder']})")
+
+    # Select starting patient
+    current_patient_idx = [0]
+    if args.patient:
+        for i, p in enumerate(available_patients):
+            if p["folder"] == args.patient:
+                current_patient_idx[0] = i
+                break
+
     # Persistent toggle bar at the very top
     current_app = [None]
     current_mode = [None]
 
-    def launch_mode(mode_name):
+    def _get_patient_folder():
+        return available_patients[current_patient_idx[0]]["folder"]
+
+    def _get_patient_label():
+        p = available_patients[current_patient_idx[0]]
+        nick = p.get("nickname") or p["folder"]
+        return nick
+
+    def launch_mode(mode_name, force=False):
         global _steps_sim
 
-        # Skip if already in this mode
-        if mode_name == current_mode[0]:
+        # Skip if already in this mode (unless forced, e.g. patient change)
+        if mode_name == current_mode[0] and not force:
             return
 
         # Cleanup previous mode
@@ -1662,11 +1765,14 @@ def main():
         # Reset step counter
         _steps_sim = 0
 
+        patient_folder = _get_patient_folder()
+
         # Instantiate the new mode
         if mode_name == "real-advancement":
             try:
                 app = PAC_Simulator_RealAdvancement(
-                    root, parent=content_frame, data_source="real"
+                    root, parent=content_frame, data_source="real",
+                    patient=patient_folder
                 )
             except ValueError as e:
                 print(f"ERROR: {e}")
@@ -1693,10 +1799,38 @@ def main():
         current_mode[0] = mode_name
         update_toggle_highlight(toggle_labels, mode_name)
 
+        # Update patient button label
+        if patient_btn is not None:
+            patient_btn.configure(text=f" {_get_patient_label()} ")
+
+    def cycle_patient():
+        """Cycle to next available patient and reload real-advancement mode."""
+        if len(available_patients) < 2:
+            return
+        current_patient_idx[0] = ((current_patient_idx[0] + 1)
+                                  % len(available_patients))
+        print(f"Switching to patient: {_get_patient_label()}")
+        # Force reload real-advancement mode with new patient
+        current_mode[0] = None  # clear so launch_mode doesn't skip
+        launch_mode("real-advancement", force=True)
+
     # Default mode
     start_mode = args.mode or "real-advancement"
 
     toggle_bar, toggle_labels = build_toggle_bar(root, start_mode, launch_mode)
+
+    # Patient selector button (right side of toggle bar, before EXIT)
+    patient_btn = None
+    if len(available_patients) > 1:
+        patient_btn = tk.Label(
+            toggle_bar, text=f" {_get_patient_label()} ",
+            font=("Helvetica", 11, "bold"),
+            fg="#00CCFF", bg="#1a1a1a",
+            padx=10, pady=6, cursor="hand2",
+        )
+        # Pack before EXIT button (which is packed side=RIGHT)
+        patient_btn.pack(side=tk.RIGHT, padx=(0, 4))
+        patient_btn.bind("<Button-1>", lambda e: cycle_patient())
 
     # Content frame fills the rest of the window below the toggle bar
     content_frame = tk.Frame(root, bg="#000000")

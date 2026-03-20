@@ -1,0 +1,23 @@
+{
+  "case_name": "pap_rv",
+  "description": "PAP waveform for Right Ventricle chamber position (with ectopy!) - Patient p003914",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p003914",
+    "segment_name": "3375271_0031",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p003914",
+    "start_seconds": 120,
+    "duration_seconds": 63
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 7875,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 7875,
+      "file": "PAP.csv"
+    }
+  ]
+}

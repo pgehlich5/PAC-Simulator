@@ -780,25 +780,27 @@ class PAC_Simulator_Generated:
         self.lbl_pressure.pack(expand=True, padx=20)
 
         # Bottom bar
-        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=50)
+        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=38)
         self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
         self.frame_bottom.pack_propagate(False)
 
         self.btn_reset = tk.Button(
             self.frame_bottom, text="RESET TO SVC",
-            font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
-            activebackground="#666666", command=self.do_reset,
-            padx=20, pady=5
+            font=("Helvetica", 10, "bold"), bg="#444444", fg="#FFFFFF",
+            activebackground="#444444", activeforeground="#FFFFFF",
+            relief=tk.FLAT, overrelief=tk.FLAT,
+            borderwidth=0, highlightthickness=0,
+            command=self.do_reset, padx=15, pady=3
         )
-        self.btn_reset.pack(side=tk.LEFT, padx=20, pady=10)
+        self.btn_reset.pack(side=tk.LEFT, padx=15, pady=6)
 
         mode_text = ("HARDWARE MODE - Rotary Encoder Active" if _HAS_GPIO
                      else "SIMULATION MODE - Use +/- keys or Reset button")
         self.lbl_mode = tk.Label(
             self.frame_bottom, text=mode_text,
-            font=("Helvetica", 10), fg="#888888", bg="#1a1a1a"
+            font=("Helvetica", 9), fg="#888888", bg="#1a1a1a"
         )
-        self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
+        self.lbl_mode.pack(side=tk.LEFT, padx=15, pady=6)
 
         self.canvas.bind("<Configure>", self._on_canvas_resize)
         self._draw_grid()
@@ -1152,43 +1154,45 @@ class PAC_Simulator_RealAdvancement:
     def _create_ui(self):
         """Create multi-signal bedside monitor with chamber advancement display."""
         # Top status bar with chamber info
-        self.frame_top = tk.Frame(self.parent, bg="#1a1a1a", height=60)
+        self.frame_top = tk.Frame(self.parent, bg="#1a1a1a", height=40)
         self.frame_top.pack(fill=tk.X, side=tk.TOP)
         self.frame_top.pack_propagate(False)
 
         params = CHAMBER_PARAMS[self.current_chamber_name]
         self.lbl_chamber_name = tk.Label(
             self.frame_top, text=params["name"].upper(),
-            font=("Helvetica", 18, "bold"), fg="#FFD84D", bg="#1a1a1a"
+            font=("Helvetica", 14, "bold"), fg="#FFD84D", bg="#1a1a1a"
         )
-        self.lbl_chamber_name.pack(side=tk.LEFT, padx=20, pady=10)
+        self.lbl_chamber_name.pack(side=tk.LEFT, padx=15, pady=6)
 
         self.lbl_steps = tk.Label(
             self.frame_top, text="Steps: 0",
-            font=("Helvetica", 14), fg="#AAAAAA", bg="#1a1a1a"
+            font=("Helvetica", 11), fg="#AAAAAA", bg="#1a1a1a"
         )
-        self.lbl_steps.pack(side=tk.RIGHT, padx=20, pady=10)
+        self.lbl_steps.pack(side=tk.RIGHT, padx=15, pady=6)
 
         # Bottom bar
-        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=50)
+        self.frame_bottom = tk.Frame(self.parent, bg="#1a1a1a", height=38)
         self.frame_bottom.pack(fill=tk.X, side=tk.BOTTOM)
         self.frame_bottom.pack_propagate(False)
 
         self.btn_reset = tk.Button(
             self.frame_bottom, text="RESET TO SVC",
-            font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
-            activebackground="#666666", command=self.do_reset,
-            padx=20, pady=5
+            font=("Helvetica", 10, "bold"), bg="#444444", fg="#FFFFFF",
+            activebackground="#444444", activeforeground="#FFFFFF",
+            relief=tk.FLAT, overrelief=tk.FLAT,
+            borderwidth=0, highlightthickness=0,
+            command=self.do_reset, padx=15, pady=3
         )
-        self.btn_reset.pack(side=tk.LEFT, padx=20, pady=10)
+        self.btn_reset.pack(side=tk.LEFT, padx=15, pady=6)
 
         mode_text = ("REAL ADVANCEMENT - Rotary Encoder Active" if _HAS_GPIO
                      else "REAL ADVANCEMENT - Use +/- keys or Reset button")
         self.lbl_mode = tk.Label(
             self.frame_bottom, text=mode_text,
-            font=("Helvetica", 10), fg="#888888", bg="#1a1a1a"
+            font=("Helvetica", 9), fg="#888888", bg="#1a1a1a"
         )
-        self.lbl_mode.pack(side=tk.LEFT, padx=20, pady=10)
+        self.lbl_mode.pack(side=tk.LEFT, padx=15, pady=6)
 
         # Main area: stacked signal rows
         self.frame_main = tk.Frame(self.parent, bg="#000000")
@@ -1628,6 +1632,12 @@ TOGGLE_ACTIVE_FG = "#FFD84D"
 TOGGLE_INACTIVE_BG = "#111111"
 TOGGLE_INACTIVE_FG = "#555555"
 
+# Patient tab styling (cyan theme to distinguish from mode tabs)
+PT_ACTIVE_BG = "#1a3a4a"
+PT_ACTIVE_FG = "#00CCFF"
+PT_INACTIVE_BG = "#111111"
+PT_INACTIVE_FG = "#336677"
+
 # Clinical scenario panel constants
 CLINICAL_BG = "#0a0a0a"
 CLINICAL_BORDER = "#333333"
@@ -1643,7 +1653,7 @@ def build_toggle_bar(root, active_mode, switch_callback):
     Returns the toggle frame and a dict of label widgets keyed by mode name
     so their styles can be updated when the mode changes.
     """
-    bar = tk.Frame(root, bg="#000000", height=36)
+    bar = tk.Frame(root, bg="#000000", height=45)
     bar.pack(fill=tk.X, side=tk.TOP)
     bar.pack_propagate(False)
 
@@ -1652,10 +1662,10 @@ def build_toggle_bar(root, active_mode, switch_callback):
         is_active = (mode_key == active_mode)
         lbl = tk.Label(
             bar, text=display_name,
-            font=("Helvetica", 12, "bold"),
+            font=("Helvetica", 15, "bold"),
             fg=TOGGLE_ACTIVE_FG if is_active else TOGGLE_INACTIVE_FG,
             bg=TOGGLE_ACTIVE_BG if is_active else TOGGLE_INACTIVE_BG,
-            padx=20, pady=6, cursor="hand2",
+            padx=24, pady=8, cursor="hand2",
         )
         lbl.pack(side=tk.LEFT, padx=(2, 0))
         lbl.bind("<Button-1>", lambda e, m=mode_key: switch_callback(m))
@@ -1664,11 +1674,11 @@ def build_toggle_bar(root, active_mode, switch_callback):
     # Quit button on the far right
     quit_btn = tk.Label(
         bar, text=" EXIT ",
-        font=("Helvetica", 11, "bold"),
+        font=("Helvetica", 14, "bold"),
         fg="#FF4444", bg="#1a1a1a",
-        padx=10, pady=6, cursor="hand2",
+        padx=12, pady=8, cursor="hand2",
     )
-    quit_btn.pack(side=tk.RIGHT, padx=(0, 8))
+    quit_btn.pack(side=tk.RIGHT, padx=(0, 10))
     quit_btn.bind("<Button-1>", lambda e: root.destroy())
 
     return bar, labels
@@ -1799,38 +1809,67 @@ def main():
         current_mode[0] = mode_name
         update_toggle_highlight(toggle_labels, mode_name)
 
-        # Update patient button label
-        if patient_btn is not None:
-            patient_btn.configure(text=f" {_get_patient_label()} ")
+        # Show patient tabs only in real-advancement mode
+        _show_patient_tabs(mode_name == "real-advancement")
 
-    def cycle_patient():
-        """Cycle to next available patient and reload real-advancement mode."""
-        if len(available_patients) < 2:
+    def select_patient(idx):
+        """Switch to a specific patient and reload real-advancement mode."""
+        if idx == current_patient_idx[0]:
             return
-        current_patient_idx[0] = ((current_patient_idx[0] + 1)
-                                  % len(available_patients))
+        current_patient_idx[0] = idx
         print(f"Switching to patient: {_get_patient_label()}")
+        _update_patient_tabs()
         # Force reload real-advancement mode with new patient
         current_mode[0] = None  # clear so launch_mode doesn't skip
         launch_mode("real-advancement", force=True)
+
+    def _update_patient_tabs():
+        """Highlight the active patient tab."""
+        for i, lbl in patient_tabs.items():
+            if i == current_patient_idx[0]:
+                lbl.configure(fg=PT_ACTIVE_FG, bg=PT_ACTIVE_BG)
+            else:
+                lbl.configure(fg=PT_INACTIVE_FG, bg=PT_INACTIVE_BG)
+
+    def _show_patient_tabs(visible):
+        """Show or hide patient tabs based on current mode."""
+        for lbl in patient_tabs.values():
+            if visible:
+                lbl.pack(side=tk.RIGHT, padx=(2, 0))
+            else:
+                lbl.pack_forget()
+        if visible:
+            patient_sep.pack(side=tk.RIGHT, padx=(4, 0))
+        else:
+            patient_sep.pack_forget()
 
     # Default mode
     start_mode = args.mode or "real-advancement"
 
     toggle_bar, toggle_labels = build_toggle_bar(root, start_mode, launch_mode)
 
-    # Patient selector button (right side of toggle bar, before EXIT)
-    patient_btn = None
+    # Patient tabs (right side of toggle bar, before EXIT)
+    # Separator label between mode tabs and patient tabs
+    patient_sep = tk.Label(
+        toggle_bar, text="│", font=("Helvetica", 15),
+        fg="#333333", bg="#000000", pady=8,
+    )
+    patient_tabs = {}
     if len(available_patients) > 1:
-        patient_btn = tk.Label(
-            toggle_bar, text=f" {_get_patient_label()} ",
-            font=("Helvetica", 11, "bold"),
-            fg="#00CCFF", bg="#1a1a1a",
-            padx=10, pady=6, cursor="hand2",
-        )
-        # Pack before EXIT button (which is packed side=RIGHT)
-        patient_btn.pack(side=tk.RIGHT, padx=(0, 4))
-        patient_btn.bind("<Button-1>", lambda e: cycle_patient())
+        patient_sep.pack(side=tk.RIGHT, padx=(4, 0))
+        for i, p in reversed(list(enumerate(available_patients))):
+            nick = p.get("nickname") or p["folder"]
+            is_active = (i == current_patient_idx[0])
+            lbl = tk.Label(
+                toggle_bar, text=f" {nick} ",
+                font=("Helvetica", 14, "bold"),
+                fg=PT_ACTIVE_FG if is_active else PT_INACTIVE_FG,
+                bg=PT_ACTIVE_BG if is_active else PT_INACTIVE_BG,
+                padx=14, pady=8, cursor="hand2",
+            )
+            lbl.pack(side=tk.RIGHT, padx=(2, 0))
+            lbl.bind("<Button-1>", lambda e, idx=i: select_patient(idx))
+            patient_tabs[i] = lbl
 
     # Content frame fills the rest of the window below the toggle bar
     content_frame = tk.Frame(root, bg="#000000")

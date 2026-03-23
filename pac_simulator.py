@@ -464,11 +464,16 @@ class SyntheticWaveformLoader:
     """Generate synthetic waveform data with same interface as RealWaveformLoader.
 
     Uses NeuroKit2 for ECG and Gaussian-component models for ABP/PAP.
-    Signals are pre-generated into arrays at init time; playback just indexes.
+    Beat-by-beat ring buffer architecture allows dynamic parameter changes
+    (heart rate, pressures) that take effect at the next beat boundary.
     """
 
-    def __init__(self, signals_to_generate, scenario_params, duration=120, fs=125):
-        """Create synthetic waveform buffers.
+    # Respiratory variation amplitude per chamber (mmHg)
+    RESP_AMP = {"svc": 2.0, "ra": 2.0, "rv": 2.0, "pa": 4.0, "wedge": 3.0}
+    RESP_AMP_ABP = 1.5
+
+    def __init__(self, signals_to_generate, scenario_params, fs=125):
+        """Create synthetic waveform loader with ring buffer.
 
         Args:
             signals_to_generate: list of signal names, e.g. ["II", "ABP"] or ["PAP"]
@@ -476,108 +481,237 @@ class SyntheticWaveformLoader:
                 - abp: {systolic, diastolic}
                 - pap: {systolic, diastolic} or {mean} depending on chamber
                 - chamber_key: "svc"|"ra"|"rv"|"pa"|"wedge" (for PAP routing)
-            duration: seconds of waveform to pre-generate
             fs: sampling rate in Hz
         """
         self.fs = fs
-        self.num_samples = int(duration * fs)
-        self.signals = {}
-        self.signal_list = []
+        self.signal_list = [s for s in signals_to_generate if s in ("II", "ABP", "PAP")]
 
-        hr = scenario_params.get("heart_rate", 75)
-        resp_rate = scenario_params.get("respiratory_rate", 14)
-        samples_per_beat = int(60.0 / hr * fs)
+        # Mutable parameters — can be changed at runtime
+        self._hr = scenario_params.get("heart_rate", 75)
+        self._pending_hr = None  # queued HR change, applied at next beat boundary
+        self._resp_rate = scenario_params.get("respiratory_rate", 14)
+        self._abp_params = scenario_params.get("abp", {"systolic": 120, "diastolic": 80})
+        self._pap_params = scenario_params.get("pap", {"mean": 10})
+        self._chamber_key = scenario_params.get("chamber_key", "pa")
 
-        # Build warped time axis: systole stays ~300ms, diastole compresses
-        t_warped = self._build_warped_time(hr, samples_per_beat)
+        # Ring buffer — 10 seconds of audio at fs
+        self._buf_seconds = 10
+        self._buf_size = int(self._buf_seconds * fs)
+        self.num_samples = self._buf_size  # for modular index wrapping
+        self._buffers = {sig: np.zeros(self._buf_size) for sig in self.signal_list}
+        self._write_pos = 0  # next position to write in circular buffer
 
-        for sig_name in signals_to_generate:
-            if sig_name == "II":
-                data = self._generate_ecg(hr, duration, fs)
-            elif sig_name == "ABP":
-                abp = scenario_params.get("abp", {"systolic": 120, "diastolic": 80})
-                data = self._generate_abp(
-                    hr, abp["systolic"], abp["diastolic"],
-                    t_warped, samples_per_beat, duration, fs,
-                    resp_rate=resp_rate, resp_amplitude_mmhg=1.5
-                )
-            elif sig_name == "PAP":
-                pap = scenario_params.get("pap", {"mean": 10})
-                chamber_key = scenario_params.get("chamber_key", "pa")
-                data = self._generate_pap(
-                    hr, pap, chamber_key, t_warped,
-                    samples_per_beat, duration, fs,
-                    resp_rate=resp_rate
-                )
-            else:
-                continue
+        # Respiratory phase — continuous across beats (radians)
+        self._resp_phase = 0.0
 
-            self.signals[sig_name] = data
-            self.signal_list.append(sig_name)
+        # ECG template — generate once, stretch for different HRs
+        if "II" in self.signal_list:
+            self._ecg_template = self._build_ecg_template(self._hr, fs)
+        else:
+            self._ecg_template = None
 
-        # Ensure num_samples matches actual generated length
-        if self.signals:
-            first_sig = next(iter(self.signals.values()))
-            self.num_samples = len(first_sig)
+        # Track which signals exist (for interface compatibility)
+        self.signals = {sig: True for sig in self.signal_list}
 
         # Order signal_list by SIGNAL_DISPLAY_ORDER
         self.signal_list = [s for s in SIGNAL_DISPLAY_ORDER
                             if s in self.signals]
 
-        print(f"Generated synthetic waveforms: "
-              f"{len(self.signal_list)} signals, "
-              f"{self.num_samples} samples ({self.num_samples / self.fs:.0f}s)")
-        for sig in self.signal_list:
-            cfg = SIGNAL_CONFIG.get(sig, {})
-            print(f"  {sig}: {cfg.get('label', sig)} ({cfg.get('unit', '?')})")
+        # Pre-fill the buffer with several seconds of data
+        self._prefill()
+
+        print(f"Synthetic loader (ring buffer): {self.signal_list}, "
+              f"HR={self._hr}, buf={self._buf_size} samples")
+
+    def _prefill(self):
+        """Fill the entire ring buffer with beats at current parameters."""
+        self._write_pos = 0
+        filled = 0
+        while filled < self._buf_size:
+            beat_len = self._fill_next_beat()
+            filled += beat_len
+
+    # --- Public API ---
 
     def get_sample(self, signal_name, index):
-        """Get a single sample, wrapping around for looping."""
-        data = self.signals.get(signal_name)
-        if data is None:
+        """Get a single sample from the ring buffer."""
+        buf = self._buffers.get(signal_name)
+        if buf is None:
             return 0.0
-        return data[index % len(data)]
+        return float(buf[index % self._buf_size])
+
+    def ensure_filled_to(self, target_index):
+        """Ensure the buffer has data up to target_index.
+
+        Called by the animation loop before reading samples. Generates
+        new beats as needed to stay ahead of the read position.
+        """
+        # How far ahead is the write position from the target?
+        target_wrapped = target_index % self._buf_size
+        # Fill if write_pos is within 2 beats of being caught
+        margin = int(60.0 / max(self._hr, 40) * self.fs * 2)
+        distance = (self._write_pos - target_wrapped) % self._buf_size
+        while distance < margin:
+            self._fill_next_beat()
+            distance = (self._write_pos - target_wrapped) % self._buf_size
+
+    def set_heart_rate(self, new_hr):
+        """Queue a heart rate change; takes effect at the next beat boundary."""
+        new_hr = max(40, min(180, int(new_hr)))
+        self._pending_hr = new_hr
+
+    @property
+    def heart_rate(self):
+        """Current heart rate."""
+        return self._hr
+
+    def set_pressures(self, abp=None, pap=None):
+        """Update pressure parameters; takes effect at the next beat."""
+        if abp is not None:
+            self._abp_params = abp
+        if pap is not None:
+            self._pap_params = pap
 
     def compute_pressure_stats(self, signal_name, window_samples=1250):
-        """Compute sys/dia/mean from the signal data."""
-        data = self.signals.get(signal_name)
-        if data is None:
+        """Compute sys/dia/mean from recent buffer data."""
+        buf = self._buffers.get(signal_name)
+        if buf is None:
             return None
-        if not data:
-            return None
+        # Use the most recent window_samples worth of data
+        end = self._write_pos
+        if window_samples >= self._buf_size:
+            segment = buf
+        else:
+            indices = np.arange(end - window_samples, end) % self._buf_size
+            segment = buf[indices]
 
-        systolic = max(data)
-        diastolic = min(data)
-        mean_val = sum(data) / len(data)
         return {
-            "systolic": round(systolic),
-            "diastolic": round(diastolic),
-            "mean": round(mean_val),
+            "systolic": round(float(segment.max())),
+            "diastolic": round(float(segment.min())),
+            "mean": round(float(segment.mean())),
         }
 
-    # --- ECG generation via NeuroKit2 ---
+    # --- Beat-by-beat generation core ---
+
+    def _fill_next_beat(self):
+        """Generate one beat of all signals and write into the ring buffer.
+
+        Returns the number of samples written (= samples_per_beat).
+        """
+        # Apply any pending HR change at beat boundary
+        if self._pending_hr is not None:
+            self._hr = self._pending_hr
+            self._pending_hr = None
+            # Rebuild ECG template for new HR
+            if self._ecg_template is not None:
+                self._ecg_template = self._build_ecg_template(self._hr, self.fs)
+
+        samples_per_beat = int(60.0 / self._hr * self.fs)
+        t_warped = self._build_warped_time(self._hr, samples_per_beat)
+
+        # Compute respiratory offset for this beat
+        beat_duration_s = samples_per_beat / self.fs
+        resp_center_phase = self._resp_phase + np.pi * (self._resp_rate / 60.0) * beat_duration_s
+        resp_offset_per_sample = np.sin(
+            self._resp_phase + 2 * np.pi * (self._resp_rate / 60.0)
+            * np.arange(samples_per_beat) / self.fs
+        )
+
+        for sig_name in self.signal_list:
+            if sig_name == "II":
+                beat = self._generate_ecg_beat(samples_per_beat)
+            elif sig_name == "ABP":
+                beat = self._generate_abp_beat(t_warped, samples_per_beat)
+                # Add respiratory variation
+                beat += self.RESP_AMP_ABP / 2.0 * resp_offset_per_sample
+            elif sig_name == "PAP":
+                beat = self._generate_pap_beat(t_warped, samples_per_beat)
+                # Add respiratory variation (chamber-specific amplitude)
+                resp_amp = self.RESP_AMP.get(self._chamber_key, 0.0)
+                if resp_amp > 0:
+                    beat += resp_amp / 2.0 * resp_offset_per_sample
+
+            # Write into ring buffer (wrapping)
+            buf = self._buffers[sig_name]
+            for i in range(len(beat)):
+                buf[(self._write_pos + i) % self._buf_size] = beat[i]
+
+        # Advance write position and respiratory phase
+        self._write_pos = (self._write_pos + samples_per_beat) % self._buf_size
+        self._resp_phase += 2 * np.pi * (self._resp_rate / 60.0) * beat_duration_s
+        # Keep phase in [0, 2π) to avoid float drift
+        self._resp_phase %= (2 * np.pi)
+
+        return samples_per_beat
+
+    # --- ECG template generation and stretching ---
 
     @staticmethod
-    def _generate_ecg(heart_rate, duration, fs):
-        """Generate Lead II ECG using NeuroKit2 ECGSYN model."""
-        if not _HAS_NEUROKIT:
-            # Fallback: flat line if neurokit2 not available
-            print("WARNING: neurokit2 not installed, ECG will be a flat line")
-            return [0.0] * int(duration * fs)
+    def _build_ecg_template(heart_rate, fs):
+        """Generate a single ECG beat template using NeuroKit2.
 
+        Returns a 1D numpy array representing one beat at the given HR.
+        """
+        if not _HAS_NEUROKIT:
+            # Flat line fallback
+            samples = int(60.0 / heart_rate * fs)
+            return np.zeros(samples)
+
+        # Generate a few seconds of ECG to extract a clean beat
+        duration = 5
         raw = nk.ecg_simulate(
             duration=duration,
             sampling_rate=fs,
             heart_rate=heart_rate,
-            heart_rate_std=1,
+            heart_rate_std=0,  # no variability for template
             method="ecgsyn",
-            noise=0.01,
+            noise=0.005,
         )
-        # NeuroKit2 returns a numpy array with values roughly in [-1, 1] mV range.
-        # Scale to realistic Lead II amplitude (~0.8 mV peak-to-peak).
-        # Our SIGNAL_CONFIG["II"] display range is -0.5 to 0.5 mV.
-        ecg_array = np.array(raw) * 0.4
-        return ecg_array.tolist()
+        ecg = np.array(raw) * 0.4
+
+        # Find R-peaks and extract one beat (second beat to avoid edge effects)
+        samples_per_beat = int(60.0 / heart_rate * fs)
+        threshold = ecg.max() * 0.5
+        min_dist = int(0.4 * fs)
+        peaks = []
+        i = 0
+        while i < len(ecg):
+            if ecg[i] > threshold:
+                peak_idx = i
+                while i < len(ecg) and ecg[i] > threshold:
+                    if ecg[i] > ecg[peak_idx]:
+                        peak_idx = i
+                    i += 1
+                peaks.append(peak_idx)
+                i = peak_idx + min_dist
+            else:
+                i += 1
+
+        if len(peaks) >= 3:
+            # Extract from second R-peak to third R-peak
+            start = peaks[1]
+            end = peaks[2]
+            template = ecg[start:end].copy()
+        else:
+            # Fallback: take one beat-length from the middle
+            mid = len(ecg) // 2
+            template = ecg[mid:mid + samples_per_beat].copy()
+
+        return template
+
+    def _generate_ecg_beat(self, target_samples):
+        """Stretch/compress the ECG template to match current HR."""
+        if self._ecg_template is None or len(self._ecg_template) == 0:
+            return np.zeros(target_samples)
+
+        template = self._ecg_template
+        if len(template) == target_samples:
+            return template.copy()
+
+        # Interpolate template to target length
+        x_old = np.linspace(0, 1, len(template))
+        x_new = np.linspace(0, 1, target_samples)
+        return np.interp(x_new, x_old, template)
 
     # --- Warped time axis for tachycardia realism ---
 
@@ -589,125 +723,49 @@ class SyntheticWaveformLoader:
         Diastole absorbs the remaining time.  The returned array maps each sample
         index to a position in template-space [0, 1) where 0-0.4 is systole and
         0.4-1.0 is diastole.
-
-        Returns:
-            np.ndarray of shape (samples_per_beat,) with values in [0, 1).
         """
         beat_duration_s = 60.0 / heart_rate
-        # Systole ~300ms, slight shortening at high HR (min 250ms)
         systole_s = max(0.25, 0.32 - 0.0003 * heart_rate)
-        diastole_s = beat_duration_s - systole_s
 
-        # How many samples fall in systole vs diastole
         systole_frac = systole_s / beat_duration_s
         systole_samples = int(round(samples_per_beat * systole_frac))
         diastole_samples = samples_per_beat - systole_samples
 
-        # Template space: systole = [0, 0.4), diastole = [0.4, 1.0)
         t_systole = np.linspace(0, 0.4, systole_samples, endpoint=False)
         t_diastole = np.linspace(0.4, 1.0, diastole_samples, endpoint=False)
 
         return np.concatenate([t_systole, t_diastole])
 
-    # --- Respiratory modulation ---
+    # --- ABP beat generation ---
 
-    @staticmethod
-    def _apply_respiratory_variation(result, total_samples, fs,
-                                     resp_rate, amplitude_mmhg):
-        """Apply sinusoidal respiratory pressure variation to a tiled waveform.
-
-        Intrathoracic pressure swings cause cyclic changes in right-heart
-        and pulmonary pressures.  Pressures drop during inspiration and
-        rise during expiration.
-
-        Args:
-            result: np.ndarray of pressure values (modified in place)
-            total_samples: length of array
-            fs: sampling rate
-            resp_rate: breaths per minute
-            amplitude_mmhg: peak-to-peak amplitude of variation in mmHg
-        """
-        if amplitude_mmhg <= 0 or resp_rate <= 0:
-            return result
-        t_arr = np.arange(total_samples) / fs
-        # Sinusoidal modulation (half amplitude because sine goes ±1)
-        envelope = (amplitude_mmhg / 2.0) * np.sin(
-            2 * np.pi * (resp_rate / 60.0) * t_arr
-        )
-        result += envelope
-        return result
-
-    # --- ABP generation via Gaussian component model ---
-
-    @staticmethod
-    def _generate_abp(heart_rate, systolic, diastolic, t_warped,
-                      samples_per_beat, duration, fs,
-                      resp_rate=14, resp_amplitude_mmhg=1.5):
-        """Generate arterial blood pressure waveform.
-
-        Uses superimposed Gaussian components for systolic peak and dicrotic
-        bump, with warped time axis for tachycardia realism.
-        """
-        total_samples = int(duration * fs)
+    def _generate_abp_beat(self, t_warped, samples_per_beat):
+        """Generate one ABP beat scaled to current pressure parameters."""
         t = t_warped
+        systolic = self._abp_params.get("systolic", 120)
+        diastolic = self._abp_params.get("diastolic", 80)
 
-        # Systolic upstroke and peak (wide, rounded)
         systolic_peak = np.exp(-((t - 0.22) ** 2) / 0.010)
-
-        # Dicrotic bump — Gaussian tail provides smooth diastolic runoff
         dicrotic_bump = 0.28 * np.exp(-((t - 0.50) ** 2) / 0.018)
-
         beat = systolic_peak + dicrotic_bump
 
-        # Normalize to 0-1 range
-        beat_min = beat.min()
-        beat_max = beat.max()
+        beat_min, beat_max = beat.min(), beat.max()
         if beat_max > beat_min:
             beat = (beat - beat_min) / (beat_max - beat_min)
 
-        # Scale to actual pressure range
         pulse_pressure = systolic - diastolic
-        beat_scaled = diastolic + beat * pulse_pressure
+        return diastolic + beat * pulse_pressure
 
-        # Tile beats to fill duration
-        num_beats = (total_samples // samples_per_beat) + 1
-        result = np.tile(beat_scaled, num_beats)[:total_samples]
+    # --- PAP beat generation (chamber-specific) ---
 
-        # Subtle respiratory variation on ABP
-        result = SyntheticWaveformLoader._apply_respiratory_variation(
-            result, total_samples, fs, resp_rate, resp_amplitude_mmhg
-        )
-
-        return result.tolist()
-
-    # --- PAP generation via chamber-specific models ---
-
-    @staticmethod
-    def _generate_pap(heart_rate, pap_params, chamber_key, t_warped,
-                      samples_per_beat, duration, fs,
-                      resp_rate=14):
-        """Generate pulmonary artery pressure waveform for a specific chamber.
-
-        Chamber morphologies:
-          svc/ra: CVP-like low-pressure a/c/v waves
-          rv:     Steep upstroke, near-zero diastolic, rapid decay
-          pa:     ABP-like shape at lower pressures with dicrotic notch
-          wedge:  Dampened a/v waves (no c wave), higher baseline
-
-        Uses warped time axis (systole fixed, diastole compresses with HR).
-        Respiratory variation applied post-tile for PA, wedge, and RA/SVC.
-        """
-        total_samples = int(duration * fs)
+    def _generate_pap_beat(self, t_warped, samples_per_beat):
+        """Generate one PAP beat for the current chamber and pressure params."""
         t = t_warped
-
-        # Respiratory variation amplitude per chamber (mmHg)
-        resp_amp = 0.0
+        chamber_key = self._chamber_key
+        pap_params = self._pap_params
 
         if chamber_key in ("svc", "ra"):
-            # CVP-like waveform with a, c, v waves
             mean_p = pap_params.get("mean", 5)
-            # Estimate sys/dia from mean for CVP
-            amplitude = max(mean_p * 0.6, 2)  # wave amplitude ~60% of mean
+            amplitude = max(mean_p * 0.6, 2)
             systolic = mean_p + amplitude
             diastolic = max(mean_p - amplitude * 0.5, 0)
 
@@ -715,70 +773,41 @@ class SyntheticWaveformLoader:
             c_wave = 0.15 * np.exp(-((t - 0.25) ** 2) / 0.004)
             v_wave = 0.30 * np.exp(-((t - 0.55) ** 2) / 0.008)
             beat = 0.2 + a_wave + c_wave + v_wave
-            resp_amp = 2.0  # CVP varies ~2 mmHg with respiration
 
         elif chamber_key == "rv":
-            # RV: rounded rise, plateau, smooth drop to near-zero diastolic
             systolic = pap_params.get("systolic", 25)
             diastolic = pap_params.get("diastolic", 4)
-
-            # Use a wide Gaussian for the systolic plateau
             sys_plateau = np.exp(-((t - 0.22) ** 2) / 0.016)
             beat = sys_plateau
-            resp_amp = 2.0  # RV has some respiratory variation
 
         elif chamber_key == "pa":
-            # PA: ABP-like but at PA pressures, with distinctive dicrotic notch
             systolic = pap_params.get("systolic", 25)
             diastolic = pap_params.get("diastolic", 10)
-
-            # Systolic upstroke (wide, rounded)
             sys_peak = np.exp(-((t - 0.22) ** 2) / 0.012)
-            # Dicrotic bump — pulmonic valve closure, Gaussian tail = diastolic runoff
             dicrotic = 0.28 * np.exp(-((t - 0.50) ** 2) / 0.020)
             beat = sys_peak + dicrotic
-            resp_amp = 4.0  # PA varies ~4 mmHg with respiration
 
         elif chamber_key == "wedge":
-            # Wedge/PCWP: dampened a and v waves, no c wave, higher baseline
             mean_p = pap_params.get("mean", 10)
             amplitude = max(mean_p * 0.4, 2)
             systolic = mean_p + amplitude
             diastolic = max(mean_p - amplitude * 0.5, 0)
-
             a_wave = 0.30 * np.exp(-((t - 0.15) ** 2) / 0.008)
             v_wave = 0.35 * np.exp(-((t - 0.52) ** 2) / 0.012)
             beat = 0.45 + a_wave + v_wave
-            resp_amp = 3.0  # Wedge varies ~3 mmHg with respiration
 
         else:
-            # Fallback: flat line at mean
             mean_p = pap_params.get("mean", 10)
             beat = np.full(samples_per_beat, 0.5)
             systolic = mean_p + 2
             diastolic = max(mean_p - 2, 0)
 
-        # Normalize beat to 0-1
-        beat_min = beat.min()
-        beat_max = beat.max()
+        beat_min, beat_max = beat.min(), beat.max()
         if beat_max > beat_min:
             beat = (beat - beat_min) / (beat_max - beat_min)
 
-        # Scale to actual pressure range
         pulse_pressure = systolic - diastolic
-        beat_scaled = diastolic + beat * pulse_pressure
-
-        # Tile beats to fill duration
-        num_beats = (total_samples // samples_per_beat) + 1
-        result = np.tile(beat_scaled, num_beats)[:total_samples]
-
-        # Apply respiratory variation
-        if resp_amp > 0:
-            result = SyntheticWaveformLoader._apply_respiratory_variation(
-                result, total_samples, fs, resp_rate, resp_amp
-            )
-
-        return result.tolist()
+        return diastolic + beat * pulse_pressure
 
 
 # --- Hardware or mock setup ------------------------------------------------------
@@ -1048,6 +1077,8 @@ class PAC_Simulator_RealAdvancement:
         self.parent = parent or root
         self.data_source = data_source
         self.patient = patient or DEFAULT_PATIENT
+        self._scenario = None  # set by _init_synthetic_loaders if applicable
+        self._hr_label = None  # set by _create_ui if synthetic mode
 
         if data_source == "synthetic":
             self.root.title("PAC Simulator - Generated Mode")
@@ -1145,7 +1176,9 @@ class PAC_Simulator_RealAdvancement:
     def _init_synthetic_loaders(self, scenario):
         """Generate waveform data from mathematical models."""
         scenario = scenario or load_scenario("normal")
+        self._scenario = scenario  # keep reference for dynamic changes
         hr = scenario["heart_rate"]
+        resp_rate = scenario.get("respiratory_rate", 14)
         print(f"Loading scenario: {scenario.get('name', 'Unknown')} "
               f"(HR={hr}, ABP={scenario['abp']['systolic']}/"
               f"{scenario['abp']['diastolic']})")
@@ -1153,7 +1186,11 @@ class PAC_Simulator_RealAdvancement:
         # Background: ECG + ABP (shared, never switches)
         self.bg_loader = SyntheticWaveformLoader(
             signals_to_generate=["II", "ABP"],
-            scenario_params={"heart_rate": hr, "abp": scenario["abp"]},
+            scenario_params={
+                "heart_rate": hr,
+                "respiratory_rate": resp_rate,
+                "abp": scenario["abp"],
+            },
         )
         self.bg_loader_default = self.bg_loader
         self.bg_loader_rv = None  # synthetic mode has no separate RV background
@@ -1173,6 +1210,7 @@ class PAC_Simulator_RealAdvancement:
                 signals_to_generate=["PAP"],
                 scenario_params={
                     "heart_rate": hr,
+                    "respiratory_rate": resp_rate,
                     "pap": pap_params,
                     "chamber_key": chamber_key,
                 },
@@ -1194,13 +1232,17 @@ class PAC_Simulator_RealAdvancement:
                 if stats:
                     self.pressure_stats[sig] = stats
 
-        # Heart rate from ECG (always background)
-        ecg_data = self.bg_loader.signals.get("II")
-        if ecg_data is not None:
-            self.heart_rate = self._compute_heart_rate_from(ecg_data,
-                                                            self.bg_loader.fs)
+        # Heart rate — in synthetic mode, use the loader's known HR directly;
+        # in real mode, estimate from ECG R-peak detection.
+        if self.data_source == "synthetic":
+            self.heart_rate = self.bg_loader.heart_rate
         else:
-            self.heart_rate = None
+            ecg_data = self.bg_loader.signals.get("II")
+            if ecg_data is not None:
+                self.heart_rate = self._compute_heart_rate_from(ecg_data,
+                                                                self.bg_loader.fs)
+            else:
+                self.heart_rate = None
 
     @staticmethod
     def _compute_heart_rate_from(ecg_data, fs):
@@ -1271,13 +1313,48 @@ class PAC_Simulator_RealAdvancement:
         )
         self.btn_reset.pack(side=tk.LEFT, padx=15, pady=6)
 
-        mode_text = ("REAL ADVANCEMENT - Rotary Encoder Active" if _HAS_GPIO
-                     else "REAL ADVANCEMENT - Use +/- keys or Reset button")
+        if self.data_source == "synthetic":
+            mode_text = f"GENERATED MODE - {self._scenario.get('name', 'Custom')}"
+        elif _HAS_GPIO:
+            mode_text = "REAL ADVANCEMENT - Rotary Encoder Active"
+        else:
+            mode_text = "REAL ADVANCEMENT - Use +/- keys or Reset button"
         self.lbl_mode = tk.Label(
             self.frame_bottom, text=mode_text,
             font=("Helvetica", 9), fg="#888888", bg="#1a1a1a"
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=15, pady=6)
+
+        # HR adjustment controls (generated mode only)
+        self._hr_label = None
+        if self.data_source == "synthetic":
+            btn_style = dict(
+                font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
+                activebackground="#555555", activeforeground="#FFFFFF",
+                relief=tk.FLAT, overrelief=tk.FLAT,
+                borderwidth=0, highlightthickness=0,
+                padx=12, pady=3,
+            )
+            # HR -5 button
+            tk.Button(
+                self.frame_bottom, text="HR -5",
+                command=lambda: self._change_hr(-5), **btn_style
+            ).pack(side=tk.RIGHT, padx=2, pady=6)
+
+            # HR label
+            self._hr_label = tk.Label(
+                self.frame_bottom,
+                text=f"HR: {self.bg_loader.heart_rate}",
+                font=("Helvetica", 12, "bold"), fg="#00FF00", bg="#1a1a1a",
+                padx=8,
+            )
+            self._hr_label.pack(side=tk.RIGHT, padx=2, pady=6)
+
+            # HR +5 button
+            tk.Button(
+                self.frame_bottom, text="HR +5",
+                command=lambda: self._change_hr(5), **btn_style
+            ).pack(side=tk.RIGHT, padx=2, pady=6)
 
         # Main area: stacked signal rows
         self.frame_main = tk.Frame(self.parent, bg="#000000")
@@ -1482,6 +1559,22 @@ class PAC_Simulator_RealAdvancement:
         else:
             _steps_sim = 0
 
+    def _change_hr(self, delta):
+        """Change heart rate by delta bpm across all synthetic loaders."""
+        if self.data_source != "synthetic":
+            return
+        new_hr = max(40, min(180, self.bg_loader.heart_rate + delta))
+        # Apply to background loader and all PAP loaders
+        self.bg_loader.set_heart_rate(new_hr)
+        for loader in self.pap_loaders.values():
+            loader.set_heart_rate(new_hr)
+        # Update HR label immediately
+        if self._hr_label:
+            self._hr_label.config(text=f"HR: {new_hr}")
+        # Recompute stats and readouts shortly after the beat changes
+        self.root.after(500, self._recompute_stats)
+        self.root.after(500, self._rebuild_readouts)
+
     def _update_chamber(self):
         """Poll encoder and switch chamber/waveform case when needed."""
         if not self.running:
@@ -1549,6 +1642,12 @@ class PAC_Simulator_RealAdvancement:
             self._grid_dirty.clear()
 
         clear_zone_width = 20
+
+        # Ensure synthetic ring buffers are filled ahead of read position
+        if self.data_source == "synthetic":
+            self.bg_loader.ensure_filled_to(self.bg_sample_index + SCROLL_SPEED + 50)
+            self.active_pap_loader.ensure_filled_to(
+                self.pap_sample_index + SCROLL_SPEED + 50)
 
         # Draw SCROLL_SPEED new pixels incrementally
         for _ in range(SCROLL_SPEED):

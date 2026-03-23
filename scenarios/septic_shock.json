@@ -1,6 +1,7 @@
 {
   "name": "Septic Shock",
   "heart_rate": 110,
+  "respiratory_rate": 22,
   "abp": {
     "systolic": 85,
     "diastolic": 50

@@ -485,7 +485,11 @@ class SyntheticWaveformLoader:
         self.signal_list = []
 
         hr = scenario_params.get("heart_rate", 75)
+        resp_rate = scenario_params.get("respiratory_rate", 14)
         samples_per_beat = int(60.0 / hr * fs)
+
+        # Build warped time axis: systole stays ~300ms, diastole compresses
+        t_warped = self._build_warped_time(hr, samples_per_beat)
 
         for sig_name in signals_to_generate:
             if sig_name == "II":
@@ -494,13 +498,16 @@ class SyntheticWaveformLoader:
                 abp = scenario_params.get("abp", {"systolic": 120, "diastolic": 80})
                 data = self._generate_abp(
                     hr, abp["systolic"], abp["diastolic"],
-                    samples_per_beat, duration, fs
+                    t_warped, samples_per_beat, duration, fs,
+                    resp_rate=resp_rate, resp_amplitude_mmhg=1.5
                 )
             elif sig_name == "PAP":
                 pap = scenario_params.get("pap", {"mean": 10})
                 chamber_key = scenario_params.get("chamber_key", "pa")
                 data = self._generate_pap(
-                    hr, pap, chamber_key, samples_per_beat, duration, fs
+                    hr, pap, chamber_key, t_warped,
+                    samples_per_beat, duration, fs,
+                    resp_rate=resp_rate
                 )
             else:
                 continue
@@ -572,21 +579,77 @@ class SyntheticWaveformLoader:
         ecg_array = np.array(raw) * 0.4
         return ecg_array.tolist()
 
+    # --- Warped time axis for tachycardia realism ---
+
+    @staticmethod
+    def _build_warped_time(heart_rate, samples_per_beat):
+        """Build a non-linear time axis where systole is relatively fixed.
+
+        At any heart rate, systole occupies ~300ms (slight shortening at high HR).
+        Diastole absorbs the remaining time.  The returned array maps each sample
+        index to a position in template-space [0, 1) where 0-0.4 is systole and
+        0.4-1.0 is diastole.
+
+        Returns:
+            np.ndarray of shape (samples_per_beat,) with values in [0, 1).
+        """
+        beat_duration_s = 60.0 / heart_rate
+        # Systole ~300ms, slight shortening at high HR (min 250ms)
+        systole_s = max(0.25, 0.32 - 0.0003 * heart_rate)
+        diastole_s = beat_duration_s - systole_s
+
+        # How many samples fall in systole vs diastole
+        systole_frac = systole_s / beat_duration_s
+        systole_samples = int(round(samples_per_beat * systole_frac))
+        diastole_samples = samples_per_beat - systole_samples
+
+        # Template space: systole = [0, 0.4), diastole = [0.4, 1.0)
+        t_systole = np.linspace(0, 0.4, systole_samples, endpoint=False)
+        t_diastole = np.linspace(0.4, 1.0, diastole_samples, endpoint=False)
+
+        return np.concatenate([t_systole, t_diastole])
+
+    # --- Respiratory modulation ---
+
+    @staticmethod
+    def _apply_respiratory_variation(result, total_samples, fs,
+                                     resp_rate, amplitude_mmhg):
+        """Apply sinusoidal respiratory pressure variation to a tiled waveform.
+
+        Intrathoracic pressure swings cause cyclic changes in right-heart
+        and pulmonary pressures.  Pressures drop during inspiration and
+        rise during expiration.
+
+        Args:
+            result: np.ndarray of pressure values (modified in place)
+            total_samples: length of array
+            fs: sampling rate
+            resp_rate: breaths per minute
+            amplitude_mmhg: peak-to-peak amplitude of variation in mmHg
+        """
+        if amplitude_mmhg <= 0 or resp_rate <= 0:
+            return result
+        t_arr = np.arange(total_samples) / fs
+        # Sinusoidal modulation (half amplitude because sine goes ±1)
+        envelope = (amplitude_mmhg / 2.0) * np.sin(
+            2 * np.pi * (resp_rate / 60.0) * t_arr
+        )
+        result += envelope
+        return result
+
     # --- ABP generation via Gaussian component model ---
 
     @staticmethod
-    def _generate_abp(heart_rate, systolic, diastolic, samples_per_beat,
-                      duration, fs):
+    def _generate_abp(heart_rate, systolic, diastolic, t_warped,
+                      samples_per_beat, duration, fs,
+                      resp_rate=14, resp_amplitude_mmhg=1.5):
         """Generate arterial blood pressure waveform.
 
-        Uses superimposed Gaussian components for systolic peak, reflected wave,
-        and dicrotic notch on an exponential diastolic decay.
+        Uses superimposed Gaussian components for systolic peak and dicrotic
+        bump, with warped time axis for tachycardia realism.
         """
         total_samples = int(duration * fs)
-
-        # Build one beat template (normalized 0-1)
-        beat = np.zeros(samples_per_beat)
-        t = np.linspace(0, 1, samples_per_beat, endpoint=False)
+        t = t_warped
 
         # Systolic upstroke and peak (wide, rounded)
         systolic_peak = np.exp(-((t - 0.22) ** 2) / 0.010)
@@ -610,13 +673,19 @@ class SyntheticWaveformLoader:
         num_beats = (total_samples // samples_per_beat) + 1
         result = np.tile(beat_scaled, num_beats)[:total_samples]
 
+        # Subtle respiratory variation on ABP
+        result = SyntheticWaveformLoader._apply_respiratory_variation(
+            result, total_samples, fs, resp_rate, resp_amplitude_mmhg
+        )
+
         return result.tolist()
 
     # --- PAP generation via chamber-specific models ---
 
     @staticmethod
-    def _generate_pap(heart_rate, pap_params, chamber_key, samples_per_beat,
-                      duration, fs):
+    def _generate_pap(heart_rate, pap_params, chamber_key, t_warped,
+                      samples_per_beat, duration, fs,
+                      resp_rate=14):
         """Generate pulmonary artery pressure waveform for a specific chamber.
 
         Chamber morphologies:
@@ -624,9 +693,15 @@ class SyntheticWaveformLoader:
           rv:     Steep upstroke, near-zero diastolic, rapid decay
           pa:     ABP-like shape at lower pressures with dicrotic notch
           wedge:  Dampened a/v waves (no c wave), higher baseline
+
+        Uses warped time axis (systole fixed, diastole compresses with HR).
+        Respiratory variation applied post-tile for PA, wedge, and RA/SVC.
         """
         total_samples = int(duration * fs)
-        t = np.linspace(0, 1, samples_per_beat, endpoint=False)
+        t = t_warped
+
+        # Respiratory variation amplitude per chamber (mmHg)
+        resp_amp = 0.0
 
         if chamber_key in ("svc", "ra"):
             # CVP-like waveform with a, c, v waves
@@ -640,15 +715,17 @@ class SyntheticWaveformLoader:
             c_wave = 0.15 * np.exp(-((t - 0.25) ** 2) / 0.004)
             v_wave = 0.30 * np.exp(-((t - 0.55) ** 2) / 0.008)
             beat = 0.2 + a_wave + c_wave + v_wave
+            resp_amp = 2.0  # CVP varies ~2 mmHg with respiration
 
         elif chamber_key == "rv":
             # RV: rounded rise, plateau, smooth drop to near-zero diastolic
             systolic = pap_params.get("systolic", 25)
             diastolic = pap_params.get("diastolic", 4)
 
-            # Use a wide Gaussian for the systolic plateau instead of piecewise linear
+            # Use a wide Gaussian for the systolic plateau
             sys_plateau = np.exp(-((t - 0.22) ** 2) / 0.016)
             beat = sys_plateau
+            resp_amp = 2.0  # RV has some respiratory variation
 
         elif chamber_key == "pa":
             # PA: ABP-like but at PA pressures, with distinctive dicrotic notch
@@ -660,6 +737,7 @@ class SyntheticWaveformLoader:
             # Dicrotic bump — pulmonic valve closure, Gaussian tail = diastolic runoff
             dicrotic = 0.28 * np.exp(-((t - 0.50) ** 2) / 0.020)
             beat = sys_peak + dicrotic
+            resp_amp = 4.0  # PA varies ~4 mmHg with respiration
 
         elif chamber_key == "wedge":
             # Wedge/PCWP: dampened a and v waves, no c wave, higher baseline
@@ -671,6 +749,7 @@ class SyntheticWaveformLoader:
             a_wave = 0.30 * np.exp(-((t - 0.15) ** 2) / 0.008)
             v_wave = 0.35 * np.exp(-((t - 0.52) ** 2) / 0.012)
             beat = 0.45 + a_wave + v_wave
+            resp_amp = 3.0  # Wedge varies ~3 mmHg with respiration
 
         else:
             # Fallback: flat line at mean
@@ -692,6 +771,12 @@ class SyntheticWaveformLoader:
         # Tile beats to fill duration
         num_beats = (total_samples // samples_per_beat) + 1
         result = np.tile(beat_scaled, num_beats)[:total_samples]
+
+        # Apply respiratory variation
+        if resp_amp > 0:
+            result = SyntheticWaveformLoader._apply_respiratory_variation(
+                result, total_samples, fs, resp_rate, resp_amp
+            )
 
         return result.tolist()
 

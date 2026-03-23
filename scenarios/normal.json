@@ -1,6 +1,7 @@
 {
   "name": "Normal Hemodynamics",
   "heart_rate": 75,
+  "respiratory_rate": 14,
   "abp": {
     "systolic": 120,
     "diastolic": 80

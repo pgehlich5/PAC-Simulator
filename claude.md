@@ -35,13 +35,14 @@ archive/                  # Older/deprecated files
 
 ### Two Modes
 - **Real Patient mode** (default): Plays back real MIMIC-III waveforms. Catheter advancement switches PAP clips while ECG+ABP continue uninterrupted.
-- **Generated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files.
+- **Generated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files. Supports dynamic heart rate adjustment via touch-friendly +/- buttons. Includes respiratory variation on PA/wedge traces and HR-dependent diastolic compression.
 
 ### Key Architectural Concepts
 - **Background/PAP split**: ECG and ABP play from a shared background loader that usually does not reset. PAP plays from per-chamber loaders that reset to sample 0 on chamber switch. This mimics a real bedside monitor.
 - **background_rv**: Optional per-patient folder. If present, the background loader swaps to it during RV passage (e.g., to show catheter-induced ectopy) and swaps back when leaving RV.
 - **Patient discovery**: `discover_patients()` scans `waveform_data/` for folders containing `patient.json`. Patients are cyclable via a button in the toggle bar.
 - **Incremental rendering**: Waveforms draw pixel-by-pixel in a sweep line, not full redraws. Critical for Pi performance.
+- **Beat-by-beat generation**: In Generated mode, `SyntheticWaveformLoader` generates one cardiac cycle at a time rather than pre-tiling. This allows HR and pressure parameters to change dynamically — new settings take effect at the next beat boundary with no glitch.
 - **Coarse ECG smoothing**: On load, if an ECG signal has quantization steps >0.01 mV, a 5-point moving average is auto-applied.
 
 ### Data Flow (Real Mode)

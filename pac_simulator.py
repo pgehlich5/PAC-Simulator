@@ -1079,6 +1079,7 @@ class PAC_Simulator_RealAdvancement:
         self.patient = patient or DEFAULT_PATIENT
         self._scenario = None  # set by _init_synthetic_loaders if applicable
         self._hr_label = None  # set by _create_ui if synthetic mode
+        self._pa_label = None  # set by _create_ui if synthetic mode
 
         if data_source == "synthetic":
             self.root.title("PAC Simulator - Generated Mode")
@@ -1356,6 +1357,32 @@ class PAC_Simulator_RealAdvancement:
                 command=lambda: self._change_hr(-5), **btn_style
             ).pack(side=tk.RIGHT, padx=2, pady=6)
 
+            # Spacer between HR and PA controls
+            tk.Label(
+                self.frame_bottom, text="  ", bg="#1a1a1a",
+            ).pack(side=tk.RIGHT, padx=4)
+
+            # PA pressure +5 button (packed first = rightmost)
+            tk.Button(
+                self.frame_bottom, text="PA +5",
+                command=lambda: self._change_pa_pressure(5), **btn_style
+            ).pack(side=tk.RIGHT, padx=2, pady=6)
+
+            # PA pressure label
+            self._pa_label = tk.Label(
+                self.frame_bottom,
+                text=self._pa_label_text(),
+                font=("Helvetica", 12, "bold"), fg="#FFFF00", bg="#1a1a1a",
+                padx=8,
+            )
+            self._pa_label.pack(side=tk.RIGHT, padx=2, pady=6)
+
+            # PA pressure -5 button
+            tk.Button(
+                self.frame_bottom, text="PA -5",
+                command=lambda: self._change_pa_pressure(-5), **btn_style
+            ).pack(side=tk.RIGHT, padx=2, pady=6)
+
         # Main area: stacked signal rows
         self.frame_main = tk.Frame(self.parent, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -1575,6 +1602,49 @@ class PAC_Simulator_RealAdvancement:
         self.root.after(500, self._recompute_stats)
         self.root.after(500, self._rebuild_readouts)
 
+    def _pa_label_text(self):
+        """Build label text for PA pressure controls based on current chamber."""
+        loader = self.active_pap_loader
+        if not hasattr(loader, '_pap_params'):
+            return "PA: --"
+        params = loader._pap_params
+        chamber = loader._chamber_key
+        if chamber in ("rv", "pa"):
+            sys = params.get("systolic", 25)
+            dia = params.get("diastolic", 10)
+            return f"PA: {sys}/{dia}"
+        else:
+            mean = params.get("mean", 10)
+            return f"PA: {mean}"
+
+    def _change_pa_pressure(self, delta):
+        """Adjust PA pressures on the active PAP loader."""
+        if self.data_source != "synthetic":
+            return
+        loader = self.active_pap_loader
+        if not hasattr(loader, '_pap_params'):
+            return
+        params = loader._pap_params.copy()
+        chamber = loader._chamber_key
+
+        if chamber in ("rv", "pa"):
+            # Adjust systolic; diastolic follows proportionally
+            new_sys = max(5, params.get("systolic", 25) + delta)
+            new_dia = max(0, params.get("diastolic", 10) + delta // 2)
+            params["systolic"] = new_sys
+            params["diastolic"] = new_dia
+        else:
+            # Adjust mean for SVC/RA/Wedge
+            new_mean = max(1, params.get("mean", 10) + delta)
+            params["mean"] = new_mean
+
+        loader.set_pressures(pap=params)
+        # Update label
+        if hasattr(self, '_pa_label') and self._pa_label:
+            self._pa_label.config(text=self._pa_label_text())
+        self.root.after(500, self._recompute_stats)
+        self.root.after(500, self._rebuild_readouts)
+
     def _update_chamber(self):
         """Poll encoder and switch chamber/waveform case when needed."""
         if not self.running:
@@ -1610,9 +1680,11 @@ class PAC_Simulator_RealAdvancement:
                         self.bg_sample_index = 0
                         print("  -> Switched back to default background")
 
-                # Update numeric readouts for new chamber
+                # Update numeric readouts and PA label for new chamber
                 self._recompute_stats()
                 self._rebuild_readouts()
+                if hasattr(self, '_pa_label') and self._pa_label:
+                    self._pa_label.config(text=self._pa_label_text())
 
                 print(f"Chamber: {new_chamber} -> PAP case '{new_pap_case}'")
 

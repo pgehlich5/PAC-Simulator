@@ -1335,10 +1335,10 @@ class PAC_Simulator_RealAdvancement:
                 borderwidth=0, highlightthickness=0,
                 padx=12, pady=3,
             )
-            # HR -5 button
+            # HR +5 button (packed first = rightmost)
             tk.Button(
-                self.frame_bottom, text="HR -5",
-                command=lambda: self._change_hr(-5), **btn_style
+                self.frame_bottom, text="HR +5",
+                command=lambda: self._change_hr(5), **btn_style
             ).pack(side=tk.RIGHT, padx=2, pady=6)
 
             # HR label
@@ -1350,10 +1350,10 @@ class PAC_Simulator_RealAdvancement:
             )
             self._hr_label.pack(side=tk.RIGHT, padx=2, pady=6)
 
-            # HR +5 button
+            # HR -5 button
             tk.Button(
-                self.frame_bottom, text="HR +5",
-                command=lambda: self._change_hr(5), **btn_style
+                self.frame_bottom, text="HR -5",
+                command=lambda: self._change_hr(-5), **btn_style
             ).pack(side=tk.RIGHT, padx=2, pady=6)
 
         # Main area: stacked signal rows

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=PAC Simulator
+Comment=Pulmonary Artery Catheter Insertion Simulator
+Exec=/home/pgehlich/PAC-Simulator/pi_setup/launch_pac.sh
+Icon=/home/pgehlich/PAC-Simulator/pi_setup/pac_icon.png
+Terminal=false
+Categories=Education;Science;

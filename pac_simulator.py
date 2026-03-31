@@ -431,24 +431,35 @@ class RealWaveformLoader:
             return 0.0
         return data[index % len(data)]
 
-    def compute_pressure_stats(self, signal_name, window_samples=1250):
-        """Compute sys/dia/mean from the most recent window of pressure data.
+    def compute_pressure_stats(self, signal_name, window_samples=1250,
+                               current_index=None):
+        """Compute sys/dia/mean from a window of pressure data.
 
-        Uses a simple min/max/mean approach over a window (default ~10 seconds
-        at 125 Hz).
+        Uses percentiles (2nd/98th) instead of raw min/max to reject
+        artifact spikes in real patient data. If current_index is given,
+        uses a window centered around that position; otherwise uses the
+        whole signal.
         """
         data = self.signals.get(signal_name)
         if data is None:
             return None
-
-        # Use the whole signal for now (it's only 2 minutes)
-        vals = data
-        if not vals:
+        if not data:
             return None
 
-        systolic = max(vals)
-        diastolic = min(vals)
-        mean_val = sum(vals) / len(vals)
+        if current_index is not None:
+            half = window_samples // 2
+            start = max(0, current_index - half)
+            end = min(len(data), current_index + half)
+            arr = np.array(data[start:end])
+        else:
+            arr = np.array(data)
+
+        if len(arr) == 0:
+            return None
+
+        systolic = float(np.percentile(arr, 98))
+        diastolic = float(np.percentile(arr, 2))
+        mean_val = float(arr.mean())
         return {
             "systolic": round(systolic),
             "diastolic": round(diastolic),
@@ -1125,9 +1136,10 @@ class PAC_Simulator_RealAdvancement:
 
         self._create_ui()
 
-        # Start animation and chamber polling
+        # Start animation, chamber polling, and periodic stats refresh
         self._update_waveform()
         self._update_chamber()
+        self._periodic_stats_update()
 
     def _init_real_loaders(self):
         """Load waveform data from MIMIC-III CSV files."""
@@ -1223,13 +1235,15 @@ class PAC_Simulator_RealAdvancement:
         for sig in self.display_signals:
             if sig not in PRESSURE_SIGNALS:
                 continue
-            # Route to correct loader
+            # Route to correct loader and get current playback index
             if sig in BACKGROUND_SIGNALS:
                 loader = self.bg_loader
+                idx = getattr(self, 'bg_sample_index', None)
             else:
                 loader = self.active_pap_loader
+                idx = getattr(self, 'pap_sample_index', None)
             if sig in loader.signals:
-                stats = loader.compute_pressure_stats(sig)
+                stats = loader.compute_pressure_stats(sig, current_index=idx)
                 if stats:
                     self.pressure_stats[sig] = stats
 
@@ -1244,6 +1258,17 @@ class PAC_Simulator_RealAdvancement:
                                                                 self.bg_loader.fs)
             else:
                 self.heart_rate = None
+
+    def _periodic_stats_update(self):
+        """Refresh pressure stats and readouts every 3 seconds."""
+        if not self.running:
+            return
+        old_stats = {sig: dict(s) for sig, s in self.pressure_stats.items()}
+        self._recompute_stats()
+        # Only rebuild readouts if numbers actually changed
+        if self.pressure_stats != old_stats:
+            self._rebuild_readouts()
+        self.root.after(3000, self._periodic_stats_update)
 
     @staticmethod
     def _compute_heart_rate_from(ecg_data, fs):

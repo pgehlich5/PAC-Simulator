@@ -22,11 +22,18 @@ waveform_data/            # Patient waveform data (one folder per patient)
     pap_wedge/
     clinical_data/        # BigQuery-sourced clinical info + vignette
     patient.json          # Nickname, demographics, summary
+  powerpoint/             # Patient 3: Digitized from UCHealth teaching slide (PAP only, no ECG/ABP)
 tools/                    # Supporting scripts
   waveform_viewer.py      # Streamlit app to browse MIMIC-III PAP waveforms
   viewer/                 # Viewer modules (data_loader, ui_components, etc.)
   find_wedge.py           # Automated wedge pressure finder across all segments
   extract_p003914.py      # Waveform extraction script for Grover
+  build_powerpoint_patient.py  # Converts WPD-digitized CSVs into patient folder
+  stitch_pa_waveform.py   # Stitches two-part PA waveform with crossfade
+  process_ra_waveform.py  # Processes RA waveform from WPD
+  process_wedge_waveform.py  # Processes PAWP waveform from WPD
+  wpd_*_raw.csv           # Raw WebPlotDigitizer extractions
+  wpd_*_resampled.csv     # Resampled 125 Hz waveforms ready for simulator
   pap_records.json        # Catalog of all MIMIC-III segments with PAP signals
 archive/                  # Older/deprecated files
 ```
@@ -44,6 +51,7 @@ archive/                  # Older/deprecated files
 - **Incremental rendering**: Waveforms draw pixel-by-pixel in a sweep line, not full redraws. Critical for Pi performance.
 - **Beat-by-beat generation**: In Generated mode, `SyntheticWaveformLoader` generates one cardiac cycle at a time rather than pre-tiling. This allows HR and pressure parameters to change dynamically — new settings take effect at the next beat boundary with no glitch.
 - **Coarse ECG smoothing**: On load, if an ECG signal has quantization steps >0.01 mV, a 5-point moving average is auto-applied.
+- **PAP-only patients**: Patients without ECG/ABP (e.g., digitized waveforms) are supported via `EmptyWaveformLoader`. The layout uses spacer rows with uniform grid weighting so the PAP canvas stays the same size as on full-signal patients.
 
 ### Data Flow (Real Mode)
 1. `RealWaveformLoader` reads `metadata.json` + CSV files from a patient's case folder
@@ -75,7 +83,8 @@ archive/                  # Older/deprecated files
 - When modifying `pac_simulator.py`, the file is large — read specific line ranges rather than the whole file
 - The Streamlit viewer runs from `tools/` directory: `python -m streamlit run waveform_viewer.py`
 - `dismissed_segments.json` in `tools/` tracks segments flagged as bad data in the viewer
-- Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and clinical_data/. See `tools/extract_p003914.py` for an example extraction script.
+- Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and clinical_data/. See `tools/extract_p003914.py` for an example extraction script. Background signals are optional — PAP-only patients work fine.
+- **WebPlotDigitizer workflow**: Waveforms can be digitized from printed/PDF sources using WPD v4 (https://automeris.io/WebPlotDigitizer/). Use 0.04 s/grid for X-axis calibration (standard ECG paper at 25mm/s). Raw CSVs go in `tools/wpd_*_raw.csv`, then processing scripts resample to 125 Hz using PCHIP interpolation (not CubicSpline — it overshoots on closely-spaced points). For multi-part extractions, use level alignment + crossfade at stitch points.
 
 ## Common Commands
 ```bash

@@ -1,0 +1,19 @@
+{
+  "case_name": "pap_pa",
+  "description": "PAP waveform for pap_pa - Digitized from UCHealth PowerPoint slide",
+  "source": {
+    "database": "WebPlotDigitizer",
+    "origin": "UCHealth PA Catheter teaching slide"
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 1477,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 1477,
+      "file": "PAP.csv"
+    }
+  ]
+}

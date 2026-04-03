@@ -337,6 +337,25 @@ def generate_waveform(waveform_type: str) -> list:
 
 
 # =============================================================================
+# Empty Waveform Loader — stub for patients with no background signals
+# =============================================================================
+class EmptyWaveformLoader:
+    """Stub loader for patients that have no ECG/ABP background signals."""
+
+    def __init__(self):
+        self.signals = {}
+        self.signal_list = []
+        self.fs = 125
+        self.num_samples = 0
+
+    def get_sample(self, signal_name, index):
+        return 0.0
+
+    def compute_pressure_stats(self, signal_name, **kwargs):
+        return None
+
+
+# =============================================================================
 # Real Waveform Loader — loads extracted MIMIC-III cases from waveform_data/
 # =============================================================================
 class RealWaveformLoader:
@@ -1148,12 +1167,9 @@ class PAC_Simulator_RealAdvancement:
         # Background loader (ECG II, ABP — shared, normally never switches)
         try:
             self.bg_loader = RealWaveformLoader(BACKGROUND_CASE, patient=pt)
-        except (FileNotFoundError, ValueError) as e:
-            raise ValueError(
-                f"Could not load background case '{BACKGROUND_CASE}': {e}\n"
-                f"Ensure waveform_data/{pt}/{BACKGROUND_CASE}/ "
-                f"exists with II.csv, ABP.csv, and metadata.json"
-            )
+        except (FileNotFoundError, ValueError):
+            # No background signals — patient has PAP only (e.g., digitized data)
+            self.bg_loader = EmptyWaveformLoader()
         self.bg_loader_default = self.bg_loader  # remember the normal bg
 
         # Optional RV-specific background (e.g., catheter-induced ectopy)
@@ -1434,15 +1450,21 @@ class PAC_Simulator_RealAdvancement:
         READOUT_WIDTH = 180
 
         # Vertical weight per signal — PAP gets more room
+        # Always allocate all 3 rows so layout is consistent even if signals
+        # are missing (e.g., PAP-only patients).
         self.frame_main.columnconfigure(0, weight=1)
         ROW_WEIGHT = {"II": 1, "ABP": 2, "PAP": 3}
+        ALL_ROWS = ["II", "ABP", "PAP"]
 
-        for idx, sig_name in enumerate(self.display_signals):
-            cfg = SIGNAL_CONFIG.get(sig_name, {})
-            color = cfg.get("color", "#FFFFFF")
+        for idx, sig_name in enumerate(ALL_ROWS):
+            self.frame_main.rowconfigure(idx, weight=ROW_WEIGHT.get(sig_name, 1),
+                                         uniform="sig_rows")
+            if sig_name not in self.display_signals:
+                # Empty spacer row to preserve layout proportions
+                spacer = tk.Frame(self.frame_main, bg="#000000")
+                spacer.grid(row=idx, column=0, sticky="nsew", pady=1)
+                continue
 
-            # Row frame — use grid for weighted row heights
-            self.frame_main.rowconfigure(idx, weight=ROW_WEIGHT.get(sig_name, 1))
             row = tk.Frame(self.frame_main, bg="#000000")
             row.grid(row=idx, column=0, sticky="nsew", pady=1)
 
@@ -1792,8 +1814,9 @@ class PAC_Simulator_RealAdvancement:
                 self.last_draw_y[sig_name] = y
 
             self.scan_x = (self.scan_x + 1) % w
-            self.bg_sample_index = ((self.bg_sample_index + 1)
-                                    % self.bg_loader.num_samples)
+            if self.bg_loader.num_samples:
+                self.bg_sample_index = ((self.bg_sample_index + 1)
+                                        % self.bg_loader.num_samples)
             self.pap_sample_index = ((self.pap_sample_index + 1)
                                      % self.active_pap_loader.num_samples)
 

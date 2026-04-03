@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 PAC Insertion Simulator with Philips IntelliVue-style Pressure Waveforms
-#test ability to commit on github
 Supports two modes:
   Generated mode:
     Displays mathematically generated pressure traces as catheter advances

@@ -263,21 +263,39 @@ current_chamber = "SVC"
 _steps_sim = 0
 
 
+CHAMBER_ORDER = ["SVC", "RA", "RV", "PA", "PCWP"]
+
+
 def map_steps_to_chamber(steps: int) -> str:
-    """Return chamber name based on encoder step count with hysteresis bands."""
+    """Return chamber name based on encoder step count with stateful hysteresis.
+
+    To advance into the next chamber, steps must reach that chamber's
+    nominal threshold. To retreat to the previous chamber, steps must
+    fall below the current chamber's entry threshold by HYST steps.
+    This creates a 'sticky' dead zone that prevents flicker from small
+    encoder oscillations at boundary positions.
+    """
     global current_chamber
 
-    if steps < THRESHOLDS["RA"] - HYST:
-        current_chamber = "SVC"
-    elif steps < THRESHOLDS["RV"] - HYST:
-        current_chamber = "RA"
-    elif steps < THRESHOLDS["PA"] - HYST:
-        current_chamber = "RV"
-    elif steps < THRESHOLDS["PCWP"] - HYST:
-        current_chamber = "PA"
-    else:
-        current_chamber = "PCWP"
+    idx = CHAMBER_ORDER.index(current_chamber)
 
+    # Advance forward through any chambers whose threshold we've passed
+    while idx < len(CHAMBER_ORDER) - 1:
+        next_chamber = CHAMBER_ORDER[idx + 1]
+        if steps >= THRESHOLDS[next_chamber]:
+            idx += 1
+        else:
+            break
+
+    # Retreat backward through any chambers we've dropped out of (with hysteresis)
+    while idx > 0:
+        exit_threshold = THRESHOLDS[CHAMBER_ORDER[idx]] - HYST
+        if steps < exit_threshold:
+            idx -= 1
+        else:
+            break
+
+    current_chamber = CHAMBER_ORDER[idx]
     return current_chamber
 
 

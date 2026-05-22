@@ -7,16 +7,18 @@
     "segment_name": "3375271_0031",
     "record_dir": "mimic3wdb-matched/1.0/p00/p003914",
     "start_seconds": 282,
-    "duration_seconds": 21
+    "duration_seconds": 21,
+    "trim_leading_samples": 208,
+    "trim_reason": "Extraction started mid-beat; trimmed to seamless loop point"
   },
   "sampling_rate_hz": 125,
-  "num_samples": 2625,
+  "num_samples": 2417,
   "signals": [
     {
       "signal_name": "PAP",
       "original_label": "PAP",
       "units": "mmHg",
-      "num_samples": 2625,
+      "num_samples": 2417,
       "file": "PAP.csv"
     }
   ]

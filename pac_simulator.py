@@ -2,7 +2,7 @@
 """
 PAC Insertion Simulator with Philips IntelliVue-style Pressure Waveforms
 Supports two modes:
-  Generated mode:
+  Simulated mode:
     Displays mathematically generated pressure traces as catheter advances
     through cardiac chambers.  Uses rotary encoder or +/- keys.
 
@@ -13,8 +13,8 @@ Supports two modes:
 
 Usage:
   python pac_simulator.py                          # real advancement mode
-  python pac_simulator.py --mode generated         # generated mode (normal scenario)
-  python pac_simulator.py --mode generated --scenario septic_shock
+  python pac_simulator.py --mode simulated         # simulated mode (normal scenario)
+  python pac_simulator.py --mode simulated --scenario septic_shock
   python pac_simulator.py --mode real-advancement  # real waveforms + encoder
 """
 
@@ -867,7 +867,7 @@ class PAC_Simulator_RealAdvancement:
 
     Supports two data sources:
       - "real": Loads MIMIC-III waveform clips from CSV files
-      - "synthetic": Generates waveforms from math models (NeuroKit2 ECG,
+      - "simulated": Generates waveforms from math models (NeuroKit2 ECG,
         Gaussian ABP/PAP) using configurable scenario files
 
     Both use the same multi-signal display and background/PAP split architecture.
@@ -879,20 +879,20 @@ class PAC_Simulator_RealAdvancement:
         self.parent = parent or root
         self.data_source = data_source
         self.patient = patient or DEFAULT_PATIENT
-        self._scenario = None  # set by _init_synthetic_loaders if applicable
-        self._hr_label = None  # set by _create_ui if synthetic mode
-        self._pa_label = None  # set by _create_ui if synthetic mode
+        self._scenario = None  # set by _init_simulated_loaders if applicable
+        self._hr_label = None  # set by _create_ui if simulated mode
+        self._pa_label = None  # set by _create_ui if simulated mode
 
-        if data_source == "synthetic":
-            self.root.title("PAC Simulator - Generated Mode")
+        if data_source == "simulated":
+            self.root.title("PAC Simulator - Simulated Mode")
         else:
             self.root.title("PAC Simulator - Real Advancement Mode")
         if parent is None:
             self.root.geometry("1280x800")
             self.root.configure(bg="#000000")
 
-        if data_source == "synthetic":
-            self._init_synthetic_loaders(scenario)
+        if data_source == "simulated":
+            self._init_simulated_loaders(scenario)
         else:
             self._init_real_loaders()
 
@@ -974,7 +974,7 @@ class PAC_Simulator_RealAdvancement:
                 + ", ".join(set(PAP_CHAMBER_CASES.values()))
             )
 
-    def _init_synthetic_loaders(self, scenario):
+    def _init_simulated_loaders(self, scenario):
         """Generate waveform data from mathematical models."""
         scenario = scenario or load_scenario("normal")
         self._scenario = scenario  # keep reference for dynamic changes
@@ -994,7 +994,7 @@ class PAC_Simulator_RealAdvancement:
             },
         )
         self.bg_loader_default = self.bg_loader
-        self.bg_loader_rv = None  # synthetic mode has no separate RV background
+        self.bg_loader_rv = None  # simulated mode has no separate RV background
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -1035,9 +1035,9 @@ class PAC_Simulator_RealAdvancement:
                 if stats:
                     self.pressure_stats[sig] = stats
 
-        # Heart rate — in synthetic mode, use the loader's known HR directly;
+        # Heart rate — in simulated mode, use the loader's known HR directly;
         # in real mode, estimate from ECG R-peak detection.
-        if self.data_source == "synthetic":
+        if self.data_source == "simulated":
             self.heart_rate = self.bg_loader.heart_rate
         else:
             ecg_data = self.bg_loader.signals.get("II")
@@ -1127,8 +1127,8 @@ class PAC_Simulator_RealAdvancement:
         )
         self.btn_reset.pack(side=tk.LEFT, padx=15, pady=6)
 
-        if self.data_source == "synthetic":
-            mode_text = f"GENERATED MODE - {self._scenario.get('name', 'Custom')}"
+        if self.data_source == "simulated":
+            mode_text = f"SIMULATED MODE - {self._scenario.get('name', 'Custom')}"
         elif _HAS_GPIO:
             mode_text = "REAL ADVANCEMENT - Rotary Encoder Active"
         else:
@@ -1139,9 +1139,9 @@ class PAC_Simulator_RealAdvancement:
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=15, pady=6)
 
-        # HR adjustment controls (generated mode only)
+        # HR adjustment controls (simulated mode only)
         self._hr_label = None
-        if self.data_source == "synthetic":
+        if self.data_source == "simulated":
             btn_style = dict(
                 font=("Helvetica", 12, "bold"), bg="#444444", fg="#FFFFFF",
                 activebackground="#555555", activeforeground="#FFFFFF",
@@ -1407,7 +1407,7 @@ class PAC_Simulator_RealAdvancement:
 
     def _change_hr(self, delta):
         """Change heart rate by delta bpm across all synthetic loaders."""
-        if self.data_source != "synthetic":
+        if self.data_source != "simulated":
             return
         new_hr = max(40, min(180, self.bg_loader.heart_rate + delta))
         # Apply to background loader and all PAP loaders
@@ -1438,7 +1438,7 @@ class PAC_Simulator_RealAdvancement:
 
     def _change_pa_pressure(self, delta):
         """Adjust PA pressures on the active PAP loader."""
-        if self.data_source != "synthetic":
+        if self.data_source != "simulated":
             return
         loader = self.active_pap_loader
         if not hasattr(loader, '_pap_params'):
@@ -1535,7 +1535,7 @@ class PAC_Simulator_RealAdvancement:
         clear_zone_width = 20
 
         # Ensure synthetic ring buffers are filled ahead of read position
-        if self.data_source == "synthetic":
+        if self.data_source == "simulated":
             self.bg_loader.ensure_filled_to(self.bg_sample_index + SCROLL_SPEED + 50)
             self.active_pap_loader.ensure_filled_to(
                 self.pap_sample_index + SCROLL_SPEED + 50)
@@ -1670,7 +1670,7 @@ class PAC_Simulator_RealAdvancement:
         self.running = False
 
 
-# --- Keyboard controls for mock mode (generated + real-advancement) -----------
+# --- Keyboard controls for mock mode (simulated + real-advancement) -----------
 def setup_keyboard_controls(app):
     """Setup keyboard shortcuts for simulation mode."""
     if not _HAS_GPIO and hasattr(app, 'do_reset'):
@@ -1700,7 +1700,7 @@ def setup_keyboard_controls(app):
 # --- Mode toggle bar ---------------------------------------------------------
 MODES = [
     ("real-advancement", "Real Patient"),
-    ("generated", "Simulated Patient"),
+    ("simulated", "Simulated Patient"),
 ]
 
 TOGGLE_ACTIVE_BG = "#333333"
@@ -1776,15 +1776,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--mode", choices=["generated", "real-advancement"],
+        "--mode", choices=["simulated", "real-advancement"],
         default=None,
-        help="Waveform mode: 'generated' (math-based) or "
+        help="Waveform mode: 'simulated' (math-based) or "
              "'real-advancement' (real waveforms + encoder chamber switching). "
              "If omitted, a mode selector is shown."
     )
     parser.add_argument(
         "--scenario", default="normal",
-        help="Scenario name for generated mode (e.g., 'normal', 'septic_shock'). "
+        help="Scenario name for simulated mode (e.g., 'normal', 'septic_shock'). "
              "Loads from scenarios/{name}.json"
     )
     parser.add_argument(
@@ -1864,15 +1864,15 @@ def main():
                 print(f"ERROR: {e}")
                 return
         else:
-            # Generated mode uses synthetic waveforms via same UI
+            # Simulated mode uses math-generated waveforms via same UI
             try:
                 scenario = load_scenario(args.scenario)
                 app = PAC_Simulator_RealAdvancement(
                     root, parent=content_frame,
-                    data_source="synthetic", scenario=scenario
+                    data_source="simulated", scenario=scenario
                 )
             except Exception as e:
-                print(f"ERROR loading generated mode: {e}")
+                print(f"ERROR loading simulated mode: {e}")
                 import traceback
                 traceback.print_exc()
                 return

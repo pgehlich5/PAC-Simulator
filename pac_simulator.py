@@ -661,10 +661,17 @@ class SyntheticWaveformLoader:
                 if resp_amp > 0:
                     beat += resp_amp / 2.0 * resp_offset_per_sample
 
-            # Write into ring buffer (wrapping)
+            # Write into ring buffer (vectorized, handles wrap-around)
             buf = self._buffers[sig_name]
-            for i in range(len(beat)):
-                buf[(self._write_pos + i) % self._buf_size] = beat[i]
+            n = len(beat)
+            start = self._write_pos
+            end = start + n
+            if end <= self._buf_size:
+                buf[start:end] = beat
+            else:
+                split = self._buf_size - start
+                buf[start:] = beat[:split]
+                buf[:end - self._buf_size] = beat[split:]
 
         # Advance write position and respiratory phase
         self._write_pos = (self._write_pos + samples_per_beat) % self._buf_size

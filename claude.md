@@ -7,7 +7,7 @@ The catheter is pushed past the rotary encoder into a 3d printed heart. The step
 ```
 pac_simulator.py          # Main simulator application (single file, ~1800 lines)
 requirements.txt          # Python dependencies
-scenarios/                # JSON hemodynamic scenario files for generated mode
+scenarios/                # JSON hemodynamic scenario files for simulated mode
   normal.json
   septic_shock.json
 waveform_data/            # Patient waveform data (one folder per patient)
@@ -42,14 +42,14 @@ archive/                  # Older/deprecated files
 
 ### Two Modes
 - **Real Patient mode** (default): Plays back real MIMIC-III waveforms. Catheter advancement switches PAP clips while ECG+ABP continue uninterrupted.
-- **Generated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files. Supports dynamic heart rate adjustment via touch-friendly +/- buttons. Includes respiratory variation on PA/wedge traces and HR-dependent diastolic compression.
+- **Simulated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files. Supports dynamic heart rate adjustment via touch-friendly +/- buttons. Includes respiratory variation on PA/wedge traces and HR-dependent diastolic compression.
 
 ### Key Architectural Concepts
 - **Background/PAP split**: ECG and ABP play from a shared background loader that usually does not reset. PAP plays from per-chamber loaders that reset to sample 0 on chamber switch. This mimics a real bedside monitor.
 - **background_rv**: Optional per-patient folder. If present, the background loader swaps to it during RV passage (e.g., to show catheter-induced ectopy) and swaps back when leaving RV.
 - **Patient discovery**: `discover_patients()` scans `waveform_data/` for folders containing `patient.json`. Patients are cyclable via a button in the toggle bar.
 - **Incremental rendering**: Waveforms draw pixel-by-pixel in a sweep line, not full redraws. Critical for Pi performance.
-- **Beat-by-beat generation**: In Generated mode, `SyntheticWaveformLoader` generates one cardiac cycle at a time rather than pre-tiling. This allows HR and pressure parameters to change dynamically — new settings take effect at the next beat boundary with no glitch.
+- **Beat-by-beat generation**: In Simulated mode, `SyntheticWaveformLoader` generates one cardiac cycle at a time rather than pre-tiling. This allows HR and pressure parameters to change dynamically — new settings take effect at the next beat boundary with no glitch.
 - **Coarse ECG smoothing**: On load, if an ECG signal has quantization steps >0.01 mV, a 5-point moving average is auto-applied.
 - **PAP-only patients**: Patients without ECG/ABP (e.g., digitized waveforms) are supported via `EmptyWaveformLoader`. The layout uses spacer rows with uniform grid weighting so the PAP canvas stays the same size as on full-signal patients.
 
@@ -79,7 +79,7 @@ archive/                  # Older/deprecated files
 - Waveform data must be removed before any open-source release
 
 ## Development Notes
-- Changes to waveform rendering should apply to both Generated and Real modes when applicable
+- Changes to waveform rendering should apply to both Simulated and Real modes when applicable
 - When modifying `pac_simulator.py`, the file is large — read specific line ranges rather than the whole file
 - The Streamlit viewer runs from `tools/` directory: `python -m streamlit run waveform_viewer.py`
 - `dismissed_segments.json` in `tools/` tracks segments flagged as bad data in the viewer
@@ -91,7 +91,7 @@ archive/                  # Older/deprecated files
 # Run simulator (PC)
 python pac_simulator.py
 python pac_simulator.py --patient p003914
-python pac_simulator.py --mode generated --scenario septic_shock
+python pac_simulator.py --mode simulated --scenario septic_shock
 
 # Run waveform viewer
 cd tools && python -m streamlit run waveform_viewer.py

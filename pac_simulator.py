@@ -149,17 +149,27 @@ def discover_patients():
 
 
 def load_clinical_vignette(patient=None):
-    """Load the clinical scenario vignette text for a patient."""
+    """Load the clinical scenario vignette text for a patient.
+
+    Looks first in clinical_data/clinical_vignette.txt (used in credentialed
+    setups where vignettes are derived from MIMIC-III clinical data and
+    git-ignored), then falls back to vignette.txt at the patient root
+    (fictional teaching vignettes shipped with the public repo).
+    """
     patient = patient or DEFAULT_PATIENT
-    vignette_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "waveform_data", patient, "clinical_data", "clinical_vignette.txt"
-    )
-    try:
-        with open(vignette_path, "r") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return None
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "waveform_data", patient)
+    candidate_paths = [
+        os.path.join(base, "clinical_data", "clinical_vignette.txt"),
+        os.path.join(base, "vignette.txt"),
+    ]
+    for path in candidate_paths:
+        try:
+            with open(path, "r") as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            continue
+    return None
 
 
 def load_scenario(scenario_name="normal"):

@@ -11,8 +11,9 @@ scenarios/                # JSON hemodynamic scenario files for simulated mode
   normal.json
   septic_shock.json
 waveform_data/            # Patient waveform data (one folder per patient)
-  herbert/                # Patient 1: 77M septic shock (p001840)
-  p003914/                # Patient 2 "Grover": 74M cardiogenic shock + severe AS
+  LICENSE-ODbL.txt        # ODbL attribution for the bundled MIMIC waveforms
+  herbert/                # Teaching case: septic shock physiology
+  p003914/                # Teaching case: cardiogenic shock + severe AS (Grover)
     background/           # Shared ECG (II) + ABP for non-RV chambers
     background_rv/        # ECG + ABP during RV (shows catheter-induced ectopy)
     pap_svc/              # PAP waveform clips per chamber
@@ -20,9 +21,10 @@ waveform_data/            # Patient waveform data (one folder per patient)
     pap_rv/
     pap_pa/
     pap_wedge/
-    clinical_data/        # BigQuery-sourced clinical info + vignette
-    patient.json          # Nickname, demographics, summary
-  powerpoint/             # Patient 3: Digitized from UCHealth teaching slide (PAP only, no ECG/ABP)
+    clinical_data/        # (gitignored) Credentialed-only clinical data — local
+    patient.json          # Nickname + fictional summary (public-safe)
+    vignette.txt          # Public fictional teaching vignette
+  powerpoint/             # Digitized from a teaching slide (PAP only, no ECG/ABP)
 tools/                    # Supporting scripts
   waveform_viewer.py      # Streamlit app to browse MIMIC-III PAP waveforms
   viewer/                 # Viewer modules (data_loader, ui_components, etc.)
@@ -74,16 +76,17 @@ archive/                  # Older/deprecated files
 - All UI must be touch-friendly (no keyboard on Pi)
 
 ## Data Sources
-- **MIMIC-III** waveform database (PhysioNet, credentialed access required)
-- **BigQuery** (`physionet-data.mimiciii_clinical`) for clinical data
-- Waveform data must be removed before any open-source release
+- **MIMIC-III Waveform Database** (PhysioNet, open access under ODbL v1.0) — the bundled `pap_*/`, `background/`, and `background_rv/` CSVs come from here and are redistributable with attribution. See `waveform_data/LICENSE-ODbL.txt`.
+- **MIMIC-III Clinical Database** (PhysioNet, credentialed access required) — source of the `clinical_data/` folders. These are git-ignored and must never be committed to a public branch. Public users see fictional `vignette.txt` files instead.
+- **BigQuery** (`physionet-data.mimiciii_clinical`) is the convenient query interface for the credentialed clinical database.
 
 ## Development Notes
 - Changes to waveform rendering should apply to both Simulated and Real modes when applicable
 - When modifying `pac_simulator.py`, the file is large — read specific line ranges rather than the whole file
 - The Streamlit viewer runs from `tools/` directory: `python -m streamlit run waveform_viewer.py`
 - `dismissed_segments.json` in `tools/` tracks segments flagged as bad data in the viewer
-- Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and clinical_data/. See `tools/extract_p003914.py` for an example extraction script. Background signals are optional — PAP-only patients work fine.
+- Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and optionally `vignette.txt` (public) and/or `clinical_data/clinical_vignette.txt` (credentialed). See `tools/extract_p003914.py` for an example extraction script. Background signals are optional — PAP-only patients work fine.
+- **Vignette loading**: `load_clinical_vignette()` prefers `clinical_data/clinical_vignette.txt` (gitignored, credentialed) over `vignette.txt` (committed, fictional). Local credentialed setups see the real story; public clones see the fictional one. Both work without code changes.
 - **WebPlotDigitizer workflow**: Waveforms can be digitized from printed/PDF sources using WPD v4 (https://automeris.io/WebPlotDigitizer/). Use 0.04 s/grid for X-axis calibration (standard ECG paper at 25mm/s). Raw CSVs go in `tools/wpd_*_raw.csv`, then processing scripts resample to 125 Hz using PCHIP interpolation (not CubicSpline — it overshoots on closely-spaced points). For multi-part extractions, use level alignment + crossfade at stitch points.
 
 ## Common Commands

@@ -1,0 +1,6 @@
+{
+    "nickname": "Grover",
+    "summary_fictional": "Teaching case: acute coronary syndrome with cardiogenic shock and severe aortic stenosis",
+    "waveform_source": "MIMIC-III Waveform Database (open access, ODbL v1.0)",
+    "notes": "RV passage demonstrates catheter-induced ventricular ectopy on the ECG (background swaps to background_rv/ in RV chamber)"
+}

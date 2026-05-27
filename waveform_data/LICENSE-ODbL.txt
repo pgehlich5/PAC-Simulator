@@ -1,0 +1,47 @@
+Waveform data attribution and license
+=====================================
+
+The waveform CSV files in `waveform_data/herbert/` and
+`waveform_data/p003914/` are extracts from the MIMIC-III Waveform Database,
+distributed under the Open Data Commons Open Database License (ODbL) v1.0.
+
+Required citations (please include in any redistribution or publication):
+
+  Moody, B., Moody, G., Villarroel, M., Clifford, G. D., & Silva, I. (2020).
+  MIMIC-III Waveform Database (version 1.0). PhysioNet.
+  https://doi.org/10.13026/c2607m
+
+  Johnson, A. E. W., Pollard, T. J., Shen, L., Lehman, L. H., Feng, M.,
+  Ghassemi, M., Moody, B., Szolovits, P., Celi, L. A., & Mark, R. G. (2016).
+  MIMIC-III, a freely accessible critical care database.
+  Scientific Data, 3, 160035.
+
+  Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C.,
+  Mark, R., ... & Stanley, H. E. (2000). PhysioBank, PhysioToolkit, and
+  PhysioNet: Components of a new research resource for complex physiologic
+  signals. Circulation, 101(23), e215-e220.
+
+ODbL v1.0 full text:
+  https://opendatacommons.org/licenses/odbl/1-0/
+
+Key obligations summary (not legal advice):
+  - Attribution: credit the source databases as cited above.
+  - Share-Alike: any derivative database must be released under ODbL.
+  - Keep open: redistributions must preserve this notice.
+
+These obligations apply to the waveform data only. The simulator source
+code in this repository is licensed separately under the MIT License.
+
+The waveform clips here are short extracts (~20 seconds each) selected
+to illustrate specific cardiac chambers during PAC insertion teaching.
+The full source records remain available at PhysioNet under the same
+license:
+  https://physionet.org/content/mimic3wdb-matched/1.0/
+
+Clinical narratives (vignette.txt files) shipped publicly with this
+project are fictional teaching cases written for educational use. They
+are NOT derived from individual patient records in the MIMIC-III
+Clinical Database (which is access-controlled and cannot be
+redistributed). Credentialed researchers may add their own clinical
+content under waveform_data/<patient>/clinical_data/, which is
+git-ignored.

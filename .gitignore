@@ -9,6 +9,10 @@ venv/
 pap_waveforms/
 pap_records.json
 
+# Credentialed MIMIC-III Clinical Database query outputs (subject_ids,
+# hadm_ids, procedure timestamps) — regenerate locally if needed.
+tools/pac_insertions.json
+
 # Streamlit
 .streamlit/
 
@@ -18,3 +22,23 @@ pap_records.json
 
 # Claude
 .claude/
+
+# Credentialed MIMIC-III Clinical Database derivatives — never commit.
+# These files are derived from data governed by the PhysioNet Credentialed
+# Health Data Use Agreement and cannot be redistributed publicly.
+# Credentialed users restore these locally; everyone else sees the fictional
+# vignette.txt files instead.
+waveform_data/*/clinical_data/
+
+# Untracked tooling/artifacts that have crept in over time
+desktop.ini
+folder_icon.ico
+nul
+tools/dismissed_segments.json
+tools/wedge_candidates.json
+tools/wedge_scan_progress.json
+tools/wpd_*_preview.png
+tools/wpd_all_chambers.png
+tools/wpd_insertion_sweep.png
+tools/wpd_pa_orient_test.png
+tools/wpd_rv_scales.png

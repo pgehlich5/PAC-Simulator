@@ -1,22 +1,29 @@
 # Pi Setup
 
-Files for configuring the Raspberry Pi to run the PAC Simulator.
+Files for configuring the Raspberry Pi to run the PAC Simulator at boot
+and via a desktop shortcut.
 
 ## Installation
 
-After cloning the repo to `/home/pgehlich/PAC-Simulator/`:
+Clone the repo anywhere you like — these scripts derive paths from their own
+location, so you don't have to install at any particular path. The examples
+below assume `~/PAC-Simulator/`:
 
 ```bash
+git clone https://github.com/pgehlich5/PAC-Simulator.git ~/PAC-Simulator
+cd ~/PAC-Simulator
+
 # Make launcher executable
-chmod +x /home/pgehlich/PAC-Simulator/pi_setup/launch_pac.sh
+chmod +x pi_setup/launch_pac.sh
 
 # --- Autostart on boot ---
-# Add to labwc autostart (append, don't overwrite existing lines)
-echo '/home/pgehlich/PAC-Simulator/pi_setup/launch_pac.sh --autostart &' >> ~/.config/labwc/autostart
+# Append to labwc autostart (don't overwrite existing lines)
+echo "$(pwd)/pi_setup/launch_pac.sh --autostart &" >> ~/.config/labwc/autostart
 
 # --- Desktop shortcut ---
-# Copy to desktop and make executable
-cp /home/pgehlich/PAC-Simulator/pi_setup/PAC-Simulator.desktop ~/Desktop/
+# The .desktop file ships with __INSTALL_DIR__ placeholders; fill them in
+# with your actual install path, then copy to your Desktop.
+sed "s|__INSTALL_DIR__|$(pwd)|g" pi_setup/PAC-Simulator.desktop > ~/Desktop/PAC-Simulator.desktop
 chmod +x ~/Desktop/PAC-Simulator.desktop
 
 # --- Optional: skip the "execute?" prompt on tap ---
@@ -25,6 +32,8 @@ chmod +x ~/Desktop/PAC-Simulator.desktop
 
 ## What each file does
 
-- `launch_pac.sh` — Shared launcher: cd's to repo, pulls latest, runs simulator
-- `PAC-Simulator.desktop` — Desktop shortcut (single tap to launch)
-- `pac_icon.png` — Icon for the shortcut (optional, can be added later)
+- `launch_pac.sh` — Shared launcher: cd's to repo root (self-discovered from
+  the script's own path), pulls latest from git, runs the simulator.
+- `PAC-Simulator.desktop` — Desktop shortcut template. The
+  `__INSTALL_DIR__` placeholders get filled in by the `sed` command above.
+- `pac_icon.png` — Icon for the shortcut (optional; not included in repo).

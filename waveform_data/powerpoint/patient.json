@@ -1,4 +1,9 @@
 {
     "nickname": "Example from the PowerPoint",
-    "summary": "Digitized PAC insertion waveforms from UCHealth teaching slide (RA, RV, PA, PAWP only — no ECG or ABP)"
+    "summary": "Digitized PAC insertion waveforms (RA, RV, PA, PAWP only — no ECG or ABP)",
+    "source": {
+        "type": "digitized_from_teaching_slide",
+        "attribution": "Waveforms digitized via WebPlotDigitizer from a UCHealth (University of Colorado Health) PAC insertion teaching slide. Used with permission for educational purposes.",
+        "method": "WebPlotDigitizer v4, resampled to 125 Hz via PCHIP interpolation. See tools/build_powerpoint_patient.py."
+    }
 }

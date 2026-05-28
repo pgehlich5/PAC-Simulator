@@ -1,8 +1,10 @@
 #!/bin/bash
 # PAC Simulator launcher for Raspberry Pi
-# Used by both autostart and desktop shortcut
+# Used by both autostart and desktop shortcut.
+# Works from any install location — derives the repo root from the script path.
 
-cd /home/pgehlich/PAC-Simulator
+REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cd "$REPO_ROOT"
 
 # Small delay on autostart to let the desktop fully load
 if [ "$1" = "--autostart" ]; then

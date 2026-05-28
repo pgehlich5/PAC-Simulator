@@ -99,8 +99,8 @@ python pac_simulator.py --mode simulated --scenario septic_shock
 # Run waveform viewer
 cd tools && python -m streamlit run waveform_viewer.py
 
-# Pi: pull updates and run
-cd /home/pgehlich/PAC-Simulator && git pull && python pac_simulator.py
+# Pi: pull updates and run (from wherever you cloned the repo)
+cd ~/PAC-Simulator && git pull && python pac_simulator.py
 
 # Pi: install dependencies (note --break-system-packages for Bookworm)
 pip install --break-system-packages -r requirements.txt

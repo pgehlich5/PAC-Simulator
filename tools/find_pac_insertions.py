@@ -18,7 +18,14 @@ import os
 from datetime import datetime
 
 # --- Configuration -----------------------------------------------------------
-MIMIC_DIR = r"C:\Users\pgehl\Documents\ClaudeCodeProjects\PAC Simulator Project\MIMIC-III Clinical Database Files"
+# Path to your local MIMIC-III Clinical Database CSV files (credentialed download
+# from PhysioNet). Set the MIMIC_CLINICAL_DIR env var to override, or place the
+# files in a "MIMIC-III Clinical Database Files" folder at the repo root.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MIMIC_DIR = os.environ.get(
+    "MIMIC_CLINICAL_DIR",
+    os.path.join(_REPO_ROOT, "MIMIC-III Clinical Database Files"),
+)
 CATALOG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "pap_records.json"
 )

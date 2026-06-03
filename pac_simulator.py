@@ -396,7 +396,7 @@ class RealWaveformLoader:
             "waveform_data", self.patient, case_name
         )
         self.metadata = {}
-        self.signals = {}       # {signal_name: list of float values}
+        self.signals = {}       # {signal_name: numpy array of float values}
         self.signal_list = []   # ordered list of available signal names
         self.fs = 125           # sampling rate
         self.num_samples = 0
@@ -440,13 +440,12 @@ class RealWaveformLoader:
         # Some MIMIC-III records have low ADC resolution (~0.04 mV steps vs
         # typical ~0.004 mV).  A small moving-average filter fills in the gaps.
         if "II" in self.signals:
-            arr = np.array(self.signals["II"])
+            arr = self.signals["II"]
             unique_steps = np.diff(np.sort(np.unique(arr)))
             if len(unique_steps) > 0 and unique_steps.min() > 0.01:
                 # Coarse quantization detected — apply 5-point moving average
                 kernel = np.ones(5) / 5
-                smoothed = np.convolve(arr, kernel, mode="same")
-                self.signals["II"] = smoothed.tolist()
+                self.signals["II"] = np.convolve(arr, kernel, mode="same")
                 print(f"  Smoothed coarse ECG (step={unique_steps.min():.4f} mV)")
 
         print(f"Loaded case '{self.case_name}': "
@@ -458,7 +457,7 @@ class RealWaveformLoader:
 
     @staticmethod
     def _load_csv(path):
-        """Load a single-column CSV (with header) into a list of floats."""
+        """Load a single-column CSV (with header) into a numpy float array."""
         values = []
         with open(path, "r") as f:
             reader = csv.reader(f)
@@ -468,7 +467,7 @@ class RealWaveformLoader:
                     values.append(float(row[0]))
                 except (ValueError, IndexError):
                     values.append(0.0)
-        return values
+        return np.asarray(values, dtype=float)
 
     def get_sample(self, signal_name, index):
         """Get a single sample, wrapping around for looping."""
@@ -487,18 +486,16 @@ class RealWaveformLoader:
         whole signal.
         """
         data = self.signals.get(signal_name)
-        if data is None:
-            return None
-        if not data:
+        if data is None or len(data) == 0:
             return None
 
         if current_index is not None:
             half = window_samples // 2
             start = max(0, current_index - half)
             end = min(len(data), current_index + half)
-            arr = np.array(data[start:end])
+            arr = data[start:end]
         else:
-            arr = np.array(data)
+            arr = data
 
         if len(arr) == 0:
             return None
@@ -1281,63 +1278,74 @@ class PAC_Simulator_RealAdvancement:
             readout.pack_propagate(False)
             self.readout_frames[sig_name] = readout
 
-        # Build initial readouts
+        # Build readout labels once, then populate their text in place
+        self._build_readouts()
         self._rebuild_readouts()
 
-    def _rebuild_readouts(self):
-        """Rebuild the numeric readout panels for all signals."""
+    def _build_readouts(self):
+        """Create the readout labels once. Their text is updated in place by
+        _rebuild_readouts, which avoids destroying/recreating widgets on every
+        refresh (cheaper, no GC churn — important on the Pi)."""
+        self.readout_labels = {}
         for sig_name in self.display_signals:
             readout = self.readout_frames[sig_name]
-
-            # Clear existing widgets
-            for widget in readout.winfo_children():
-                widget.destroy()
-
             cfg = SIGNAL_CONFIG.get(sig_name, {})
             color = cfg.get("color", "#FFFFFF")
             label = cfg.get("label", sig_name)
 
-            if sig_name in PRESSURE_SIGNALS and sig_name in self.pressure_stats:
-                stats = self.pressure_stats[sig_name]
+            lbl_name = tk.Label(
+                readout, text=label,
+                font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+            )
+            lbl_name.pack(pady=(5, 0))
 
-                lbl_name = tk.Label(
-                    readout, text=label,
-                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
-                )
-                lbl_name.pack(pady=(5, 0))
-
-                txt = f"{stats['systolic']}/{stats['diastolic']}"
+            if sig_name in PRESSURE_SIGNALS:
                 lbl_val = tk.Label(
-                    readout, text=txt,
+                    readout, text="--/--",
                     font=("Arial", 30, "bold"), fg=color, bg="#000000"
                 )
                 lbl_val.pack()
-
                 lbl_mean = tk.Label(
-                    readout, text=f"({stats['mean']})",
+                    readout, text="(--)",
                     font=("Arial", 14), fg=color, bg="#000000"
                 )
                 lbl_mean.pack()
-
-            elif sig_name not in PRESSURE_SIGNALS:
-                lbl_name = tk.Label(
-                    readout, text=label,
-                    font=("Helvetica", 11, "bold"), fg=color, bg="#000000"
+                self.readout_labels[sig_name] = {
+                    "value": lbl_val, "mean": lbl_mean}
+            else:
+                lbl_hr = tk.Label(
+                    readout, text="--",
+                    font=("Arial", 30, "bold"), fg=color, bg="#000000"
                 )
-                lbl_name.pack(pady=(5, 0))
+                lbl_hr.pack()
+                lbl_bpm = tk.Label(
+                    readout, text="bpm",
+                    font=("Helvetica", 11), fg=color, bg="#000000"
+                )
+                lbl_bpm.pack()
+                self.readout_labels[sig_name] = {"hr": lbl_hr}
 
+    def _rebuild_readouts(self):
+        """Update the numeric readout text in place (no widget churn)."""
+        for sig_name in self.display_signals:
+            labels = self.readout_labels.get(sig_name)
+            if not labels:
+                continue
+
+            if sig_name in PRESSURE_SIGNALS:
+                stats = self.pressure_stats.get(sig_name)
+                if stats:
+                    labels["value"].config(
+                        text=f"{stats['systolic']}/{stats['diastolic']}")
+                    labels["mean"].config(text=f"({stats['mean']})")
+                else:
+                    labels["value"].config(text="--/--")
+                    labels["mean"].config(text="(--)")
+            else:
                 if self.heart_rate is not None:
-                    lbl_hr = tk.Label(
-                        readout, text=f"{self.heart_rate}",
-                        font=("Arial", 30, "bold"), fg=color, bg="#000000"
-                    )
-                    lbl_hr.pack()
-
-                    lbl_bpm = tk.Label(
-                        readout, text="bpm",
-                        font=("Helvetica", 11), fg=color, bg="#000000"
-                    )
-                    lbl_bpm.pack()
+                    labels["hr"].config(text=f"{self.heart_rate}")
+                else:
+                    labels["hr"].config(text="--")
 
     def _draw_grid_for_signal(self, signal_name):
         """Draw grid lines for a specific signal's canvas."""

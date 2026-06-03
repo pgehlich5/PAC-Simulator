@@ -899,7 +899,7 @@ class PAC_Simulator_RealAdvancement:
     """
 
     def __init__(self, root, parent=None, data_source="real", scenario=None,
-                 patient=None):
+                 patient=None, profile=False):
         self.root = root
         self.parent = parent or root
         self.data_source = data_source
@@ -907,6 +907,13 @@ class PAC_Simulator_RealAdvancement:
         self._scenario = None  # set by _init_simulated_loaders if applicable
         self._hr_label = None  # set by _create_ui if simulated mode
         self._pa_label = None  # set by _create_ui if simulated mode
+
+        # --- Performance profiling (opt-in via --profile) ---
+        self._profile = profile
+        self._prof_last_start = None   # perf_counter() at previous frame start
+        self._prof_work = []           # per-frame work durations (seconds)
+        self._prof_intervals = []      # actual gaps between frame starts (s)
+        self._prof_interval_ms = 3000  # how often to print a summary line
 
         if data_source == "simulated":
             self.root.title("PAC Simulator - Simulated Mode")
@@ -956,6 +963,10 @@ class PAC_Simulator_RealAdvancement:
         self._update_waveform()
         self._update_chamber()
         self._periodic_stats_update()
+        if self._profile:
+            print(f"[PROFILE] enabled - target {FRAME_RATE} fps "
+                  f"({1000.0 / FRAME_RATE:.1f} ms/frame work budget)")
+            self._profile_report()
 
     def _init_real_loaders(self):
         """Load waveform data from MIMIC-III CSV files."""
@@ -1550,6 +1561,12 @@ class PAC_Simulator_RealAdvancement:
         if not self.running:
             return
 
+        if self._profile:
+            _t_start = time.perf_counter()
+            if self._prof_last_start is not None:
+                self._prof_intervals.append(_t_start - self._prof_last_start)
+            self._prof_last_start = _t_start
+
         ms = int(1000 / FRAME_RATE)
 
         if not self.canvases:
@@ -1639,7 +1656,86 @@ class PAC_Simulator_RealAdvancement:
                 self.scan_x, 0, self.scan_x + clear_zone_width, h,
                 fill="#000000", outline="", tags="clearzone")
 
+        if self._profile:
+            self._prof_work.append(time.perf_counter() - _t_start)
+
         self.root.after(ms, self._update_waveform)
+
+    # --- Performance profiling --------------------------------------------------
+
+    def _profile_report(self):
+        """Print a periodic frame-timing (+ Pi thermal) summary. Opt-in only.
+
+        frame_work = time spent inside _update_waveform (our cost).
+        fps        = real achieved rate from gaps between frame starts.
+        If fps sags below ~30 while frame_work stays under budget, the Pi is
+        starved elsewhere (or throttling) rather than the render being slow.
+        """
+        if not self.running:
+            return
+        work = self._prof_work
+        if work:
+            budget_ms = 1000.0 / FRAME_RATE
+            work_ms = [w * 1000.0 for w in work]
+            avg_work = sum(work_ms) / len(work_ms)
+            max_work = max(work_ms)
+            over = sum(1 for w in work_ms if w > budget_ms)
+            if self._prof_intervals:
+                int_ms = [i * 1000.0 for i in self._prof_intervals]
+                fps = 1000.0 / (sum(int_ms) / len(int_ms))
+            else:
+                fps = 0.0
+            msg = (f"[PROFILE] fps={fps:4.1f}  "
+                   f"frame_work avg={avg_work:5.1f}ms max={max_work:5.1f}ms  "
+                   f"budget={budget_ms:.0f}ms over={over}/{len(work_ms)}")
+            thermal = self._read_pi_thermal()
+            if thermal:
+                msg += "  " + thermal
+            print(msg)
+            self._prof_work.clear()
+            self._prof_intervals.clear()
+        self.root.after(self._prof_interval_ms, self._profile_report)
+
+    @staticmethod
+    def _read_pi_thermal():
+        """Return 'temp=.. throttled=..' on a Raspberry Pi, else '' (e.g. PC).
+
+        Decodes vcgencmd get_throttled bits so active throttling is obvious:
+          bit 0 under-voltage, bit 1 ARM freq capped,
+          bit 2 currently throttled, bit 3 soft temp limit active.
+        """
+        import shutil
+        import subprocess
+        if shutil.which("vcgencmd") is None:
+            return ""
+        try:
+            temp = subprocess.run(
+                ["vcgencmd", "measure_temp"],
+                capture_output=True, text=True, timeout=1).stdout.strip()
+            thr = subprocess.run(
+                ["vcgencmd", "get_throttled"],
+                capture_output=True, text=True, timeout=1).stdout.strip()
+        except Exception:
+            return ""
+        temp_val = temp.split("=", 1)[-1] if "=" in temp else temp
+        thr_val = thr.split("=", 1)[-1] if "=" in thr else thr
+        warn = ""
+        try:
+            bits = int(thr_val, 16)
+            active = []
+            if bits & 0x1:
+                active.append("under-voltage")
+            if bits & 0x2:
+                active.append("freq-capped")
+            if bits & 0x4:
+                active.append("THROTTLED")
+            if bits & 0x8:
+                active.append("temp-limit")
+            if active:
+                warn = " ! " + ",".join(active)
+        except ValueError:
+            pass
+        return f"temp={temp_val} throttled={thr_val}{warn}"
 
     # --- Clinical scenario panel ------------------------------------------------
 
@@ -1828,6 +1924,12 @@ def main():
         help="Patient folder name (e.g., 'herbert', 'p003914'). "
              "If omitted, the first discovered patient is used."
     )
+    parser.add_argument(
+        "--profile", action="store_true",
+        help="Print periodic frame-timing and (on a Pi) CPU temp/throttle "
+             "stats to the terminal. For performance debugging only; off by "
+             "default so it never affects normal use."
+    )
     args = parser.parse_args()
 
     root = tk.Tk()
@@ -1894,7 +1996,7 @@ def main():
             try:
                 app = PAC_Simulator_RealAdvancement(
                     root, parent=content_frame, data_source="real",
-                    patient=patient_folder
+                    patient=patient_folder, profile=args.profile
                 )
             except ValueError as e:
                 print(f"ERROR: {e}")
@@ -1905,7 +2007,8 @@ def main():
                 scenario = load_scenario(args.scenario)
                 app = PAC_Simulator_RealAdvancement(
                     root, parent=content_frame,
-                    data_source="simulated", scenario=scenario
+                    data_source="simulated", scenario=scenario,
+                    profile=args.profile
                 )
             except Exception as e:
                 print(f"ERROR loading simulated mode: {e}")

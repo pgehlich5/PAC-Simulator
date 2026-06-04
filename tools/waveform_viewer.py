@@ -105,6 +105,8 @@ def main():
         sampfrom=sampfrom,
         visible_signals=visible,
         stats=stats,
+        marker_time=selections.get("marker_time"),
+        transition_time=selections.get("transition_time"),
     )
 
     st.plotly_chart(

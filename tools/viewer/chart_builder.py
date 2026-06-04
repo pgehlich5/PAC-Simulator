@@ -17,6 +17,8 @@ def build_waveform_figure(
     sampfrom,
     visible_signals,
     stats=None,
+    marker_time=None,
+    transition_time=None,
 ):
     """Build a Plotly figure with vertically stacked waveforms.
 
@@ -120,6 +122,32 @@ def build_waveform_figure(
                 xanchor="right",
                 yanchor="top",
             )
+
+    # Scan-flag markers: vertical lines across all stacked subplots so the user
+    # can see where the RV detector flagged (and the RV->PA transition). Only
+    # draw a marker when it falls INSIDE the current window — otherwise add_vline
+    # would stretch the x-axis out to that time, squashing the waveform (looks
+    # like a zoom) and pinning the flag to the edge.
+    view_start = sampfrom / fs
+    view_end = view_start + n_samples / fs
+
+    def _in_view(tv):
+        return tv is not None and view_start <= tv <= view_end
+
+    if _in_view(marker_time):
+        fig.add_vline(
+            x=marker_time, line=dict(color="#FF8C00", width=1.5, dash="dash"),
+            annotation_text="RV flag", annotation_position="top right",
+            annotation_font=dict(color="#FF8C00", size=11),
+            row="all", col=1,
+        )
+    if _in_view(transition_time):
+        fig.add_vline(
+            x=transition_time, line=dict(color="#00E5FF", width=1.5, dash="dot"),
+            annotation_text="→PA", annotation_position="top left",
+            annotation_font=dict(color="#00E5FF", size=11),
+            row="all", col=1,
+        )
 
     # Bottom x-axis label
     fig.update_xaxes(title="Time (seconds)", row=n_visible, col=1)

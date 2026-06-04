@@ -106,3 +106,12 @@ cd ~/PAC-Simulator && git pull && python pac_simulator.py
 pip install --break-system-packages -r requirements.txt
 pip install --break-system-packages "numpy<2"  # must stay on numpy 1.x for matplotlib
 ```
+
+## Notable Database Findings
+- **p007532 (record 3880843) — captured death, not a PAC float.** Surfaced by the
+  RV-morphology scan (`tools/scan_db_for_rv.py`) but on review it's a dying patient:
+  severe pulmonary HTN, large slow cyclic ABP/PAP oscillations (~70↔180 systolic over
+  minutes), gradual decline, then terminal convergence of ABP and PAP to ~20 mmHg with
+  loss of pulsatility (cardiac arrest); segment `_0002` is the asystolic tail. Pattern
+  fits a comfort-care / withdrawal-of-care death (slow monotonic decline, no ACLS on/off
+  signature). Kept as an interesting reference, not a teaching float.

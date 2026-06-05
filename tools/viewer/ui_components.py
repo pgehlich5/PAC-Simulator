@@ -13,7 +13,7 @@ from viewer.data_loader import (
     load_dismissed,
     save_dismissed,
 )
-from viewer.candidates import load_candidates, candidate_label
+from viewer.candidates import available_sources, load_candidates, candidate_label
 
 
 def render_sidebar():
@@ -255,9 +255,9 @@ def render_sidebar():
 
 
 def _queue_candidate_jump(c):
-    """Stage a navigation to candidate c. The pending keys are applied before
-    the patient/segment/offset widgets render, so the jump takes effect on the
-    next pass (callbacks auto-rerun)."""
+    """Stage a navigation to candidate c (unified shape). Pending keys are
+    applied before the patient/segment/offset widgets render, so the jump takes
+    effect on the next pass (callbacks auto-rerun)."""
     patient_list = get_patient_list(_get_patient_index())
     if c["patient_id"] not in patient_list:
         st.session_state["_cand_warn"] = (
@@ -265,34 +265,59 @@ def _queue_candidate_jump(c):
             "(maybe dismissed)."
         )
         return
-    best = c.get("best_rv", {})
     st.session_state["_pending_patient"] = c["patient_id"]
     st.session_state["_jump_segment"] = c["segment_name"]
-    st.session_state["_jump_offset"] = best.get("t_sec", 0.0)
+    st.session_state["_jump_offset"] = c.get("jump_t") or 0.0
     st.session_state["active_marker"] = {
         "segment_name": c["segment_name"],
-        "t_sec": best.get("t_sec"),
-        "transition_t": c.get("transition_t") if c.get("transition") else None,
+        "t_sec": c.get("marker_t"),
+        "transition_t": c.get("transition_t"),
     }
 
 
 def _on_candidate_change():
     """Selectbox on_change: jump to the newly chosen candidate immediately."""
-    cands = load_candidates()
+    cands = load_candidates(st.session_state.get("cand_source", ""))
     i = st.session_state.get("cand_select")
     if i is not None and 0 <= i < len(cands):
         _queue_candidate_jump(cands[i])
 
 
+def _on_source_change():
+    """Reset the candidate selection when switching candidate sources."""
+    st.session_state["cand_select"] = 0
+
+
 def _render_candidate_panel():
-    """Sidebar panel: picking a flagged candidate jumps to it automatically."""
-    cands = load_candidates()
-    if not cands:
+    """Sidebar panel: pick a candidate source, then selecting a candidate jumps
+    to it automatically and marks the flag on the chart."""
+    sources = available_sources()
+    if not sources:
         return
-    total = len(cands)
-    with st.sidebar.expander(f"🔎 Scan candidates ({total})", expanded=True):
+    keys = [k for k, _ in sources]
+    labels = {k: lbl for k, lbl in sources}
+
+    with st.sidebar.expander("🔎 Review candidates", expanded=True):
+        if st.session_state.get("cand_source") not in keys:
+            st.session_state["cand_source"] = keys[0]
+        if len(keys) > 1:
+            source = st.radio("Source", options=keys,
+                              format_func=lambda k: labels[k],
+                              key="cand_source", on_change=_on_source_change)
+        else:
+            source = keys[0]
+            st.caption(labels[source])
+
+        cands = load_candidates(source)
+        if not cands:
+            st.caption("No candidates in this source yet.")
+            return
+        total = len(cands)
+        if st.session_state.get("cand_select", 0) >= total:
+            st.session_state["cand_select"] = 0
+
         sel_i = st.selectbox(
-            "Flagged candidate (jumps on select)",
+            f"Candidate ({total}) — jumps on select",
             options=list(range(total)),
             format_func=lambda i: candidate_label(cands[i], i, total),
             key="cand_select",
@@ -301,15 +326,9 @@ def _render_candidate_panel():
         if "_cand_warn" in st.session_state:
             st.warning(st.session_state.pop("_cand_warn"))
         c = cands[sel_i]
-        best = c.get("best_rv", {})
-        extra = (f", transition @{c['transition_t']:.0f}s"
-                 if c.get("transition") and c.get("transition_t") is not None
-                 else "")
-        st.caption(
-            f"`{c['patient_id']}` / `{c['segment_name']}` — sustained RV run "
-            f"{c.get('longest_rv_run', '?')} windows{extra}. "
-            f"Best RV @{best.get('t_sec', 0):.0f}s (score {best.get('score', 0):.2f})."
-        )
+        extra = (f"  ·  →PA marker @{c['transition_t']:.0f}s"
+                 if c.get("transition_t") is not None else "")
+        st.caption(f"`{c['patient_id']}` / `{c['segment_name']}`{extra}")
         # Re-jump to the same candidate (on_change won't fire on a re-select,
         # e.g. after you've scrubbed away from the flag).
         st.button("↩  Re-center on flag", key="cand_jump",

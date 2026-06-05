@@ -69,14 +69,19 @@ def save_results(candidates):
     print(f"\n  Results saved to {RESULTS_PATH}")
 
 
-def fetch_chunk(segment_name, record_dir, sampfrom, sampto):
-    """Download a chunk of waveform data from PhysioNet."""
+def fetch_chunk(segment_name, record_dir, sampfrom, sampto, channels=None):
+    """Download a chunk of waveform data from PhysioNet.
+
+    Pass channels=[idx] to fetch only the PAP channel (much less download
+    than pulling every co-recorded signal we don't use here).
+    """
     try:
         record = wfdb.rdrecord(
             segment_name,
             pn_dir=record_dir,
             sampfrom=sampfrom,
             sampto=sampto,
+            channels=channels,
         )
         return record
     except Exception as e:
@@ -327,14 +332,15 @@ def scan_segment(seg, seg_num, total_segs):
               f"({format_time(chunk_offset_sec)} - {format_time(chunk_end/fs)}) "
               f"[{pct:.0f}%]", end="")
 
-        record = fetch_chunk(segment_name, record_dir, chunk_start, chunk_end)
+        record = fetch_chunk(segment_name, record_dir, chunk_start, chunk_end,
+                             channels=[pap_idx])
         if record is None:
             print(" X")
             continue
 
-        # Extract PAP channel
+        # PAP-only fetch -> the single channel is at column 0
         try:
-            pap_signal = record.p_signal[:, pap_idx]
+            pap_signal = record.p_signal[:, 0]
         except (IndexError, AttributeError):
             print(" X (bad signal)")
             continue

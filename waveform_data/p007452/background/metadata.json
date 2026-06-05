@@ -1,0 +1,30 @@
+{
+  "case_name": "background",
+  "description": "Background signals (ECG II, ABP) for continuous playback - Patient p007452",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p007452",
+    "segment_name": "3217478_0011",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p007452",
+    "start_seconds": 180,
+    "duration_seconds": 25
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 3125,
+  "signals": [
+    {
+      "signal_name": "II",
+      "original_label": "II",
+      "units": "mV",
+      "num_samples": 3125,
+      "file": "II.csv"
+    },
+    {
+      "signal_name": "ABP",
+      "original_label": "ABP",
+      "units": "mmHg",
+      "num_samples": 3125,
+      "file": "ABP.csv"
+    }
+  ]
+}

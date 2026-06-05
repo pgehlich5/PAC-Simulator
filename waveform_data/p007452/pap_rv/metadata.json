@@ -1,0 +1,23 @@
+{
+  "case_name": "pap_rv",
+  "description": "PAP waveform for Right Ventricle chamber position - Patient p007452",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p007452",
+    "segment_name": "3217478_0011",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p007452",
+    "start_seconds": 256,
+    "duration_seconds": 7
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 875,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 875,
+      "file": "PAP.csv"
+    }
+  ]
+}

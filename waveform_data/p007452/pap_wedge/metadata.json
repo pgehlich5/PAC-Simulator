@@ -1,0 +1,23 @@
+{
+  "case_name": "pap_wedge",
+  "description": "PAP waveform for Pulmonary Capillary Wedge position - Patient p007452 (trimmed at 328.6s to drop a stray RV beat at the clip end)",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p007452",
+    "segment_name": "3217478_0011",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p007452",
+    "start_seconds": 305,
+    "duration_seconds": 23.600000000000023
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 2950,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 2950,
+      "file": "PAP.csv"
+    }
+  ]
+}

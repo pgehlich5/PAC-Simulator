@@ -1,0 +1,9 @@
+{
+    "nickname": "Esther",
+    "subject_id": 7452,
+    "mimic_id": "p007452",
+    "age": null,
+    "sex": null,
+    "summary": "Complete PAC float captured on the PAP channel: catheter advanced SVC/RA -> RV -> PA -> wedge. Found by the wedge-anchored scan. Clinical details TBD (pull from MIMIC-III).",
+    "notes": "First teaching case sourced by the automated wedge-anchored float finder. No background_rv (no RV ectopy in this float)."
+}

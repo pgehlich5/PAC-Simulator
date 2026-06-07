@@ -26,10 +26,17 @@ waveform_data/            # Patient waveform data (one folder per patient)
     vignette.txt          # Public fictional teaching vignette
   powerpoint/             # Digitized from a teaching slide (PAP only, no ECG/ABP)
 tools/                    # Supporting scripts
-  waveform_viewer.py      # Streamlit app to browse MIMIC-III PAP waveforms
-  viewer/                 # Viewer modules (data_loader, ui_components, etc.)
-  find_wedge.py           # Automated wedge pressure finder across all segments
-  extract_p003914.py      # Waveform extraction script for Grover
+  FLOAT_FINDING.md        # ★ Full guide to the wedge-anchored float-finding pipeline
+  waveform_viewer.py      # Streamlit app to browse MIMIC-III PAP waveforms (has a
+                          #   "Review candidates" panel that jumps to scan hits)
+  viewer/                 # Viewer modules (data_loader, ui_components, candidates, etc.)
+  # --- Float-finding pipeline (see FLOAT_FINDING.md) ---
+  rv_morphology_probe.py  # Shape-based RV-vs-PA detector (+ physiologic gates); reused below
+  scan_db_for_rv.py       # RV-presence scan across the catalog (RV-morphology approach)
+  find_wedge.py           # STAGE 1: wedge-episode finder -> wedge_candidates.json (anchors)
+  find_float_leadin.py    # STAGE 2: backward float lead-in scorer -> float_candidates.json
+  extract_p003914.py      # Waveform extraction script for Grover (extraction template)
+  extract_p007452.py      # Extraction for Esther (first algorithm-found float)
   build_powerpoint_patient.py  # Converts WPD-digitized CSVs into patient folder
   stitch_pa_waveform.py   # Stitches two-part PA waveform with crossfade
   process_ra_waveform.py  # Processes RA waveform from WPD
@@ -88,6 +95,19 @@ archive/                  # Older/deprecated files
 - Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and optionally `vignette.txt` (public) and/or `clinical_data/clinical_vignette.txt` (credentialed). See `tools/extract_p003914.py` for an example extraction script. Background signals are optional — PAP-only patients work fine.
 - **Vignette loading**: `load_clinical_vignette()` prefers `clinical_data/clinical_vignette.txt` (gitignored, credentialed) over `vignette.txt` (committed, fictional). Local credentialed setups see the real story; public clones see the fictional one. Both work without code changes.
 - **WebPlotDigitizer workflow**: Waveforms can be digitized from printed/PDF sources using WPD v4 (https://automeris.io/WebPlotDigitizer/). Use 0.04 s/grid for X-axis calibration (standard ECG paper at 25mm/s). Raw CSVs go in `tools/wpd_*_raw.csv`, then processing scripts resample to 125 Hz using PCHIP interpolation (not CubicSpline — it overshoots on closely-spaced points). For multi-part extractions, use level alignment + crossfade at stitch points.
+
+## Finding New PAC-Float Patients (wedge-anchored pipeline)
+A working pipeline sources new complete-float teaching cases (IVC/RA→RV→PA→wedge) from MIMIC-III.
+**Full guide: `tools/FLOAT_FINDING.md`.** It found Esther (p007452), the first algorithm-discovered case.
+- **Key idea**: don't classify isolated RV-vs-PA windows (they're ambiguous) — detect the ordered
+  *sequence* of transitions, and anchor the search on the rarest event (the wedge), looking backward.
+- **Stages**: `find_wedge.py` (Stage 1: wedge anchors → `wedge_candidates.json`) → `find_float_leadin.py`
+  (Stage 2: backward float lead-in, scored 0–6 → `float_candidates.json`) → review in the viewer's
+  "Complete floats" candidate panel → extract with an `extract_*.py` script.
+- **Validate any change against Grover/Esther** (known complete floats) before trusting a scan.
+- **`float_candidates.json` score 6 = complete float**; a *negative* RV→PA diastolic step-up means it's
+  NOT a real float (CPR/artifact). Generated `*_candidates.json` / `*_progress.json` are regenerable
+  (untracked).
 
 ## Common Commands
 ```bash

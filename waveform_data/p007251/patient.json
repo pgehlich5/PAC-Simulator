@@ -1,0 +1,9 @@
+{
+    "nickname": "Horace",
+    "subject_id": 7251,
+    "mimic_id": "p007251",
+    "age": null,
+    "sex": null,
+    "summary": "Complete PAC float with SEVERE pulmonary hypertension (PAP ~74/44). Catheter advanced SVC/RA -> RV -> PA -> wedge. Found by the wedge-anchored scan. Clinical details TBD.",
+    "notes": "Per-chamber ECG+ABP backgrounds capture subtle ectopy time-locked to each chamber's PAP (generalized background swap)."
+}

@@ -1,0 +1,23 @@
+{
+  "case_name": "pap_rv",
+  "description": "PAP for pap_rv - Patient p007251",
+  "source": {
+    "database": "mimic3wdb-matched/1.0",
+    "patient_id": "p007251",
+    "segment_name": "3259702_0173",
+    "record_dir": "mimic3wdb-matched/1.0/p00/p007251",
+    "start_seconds": 28.45,
+    "duration_seconds": 34.55
+  },
+  "sampling_rate_hz": 125,
+  "num_samples": 4319,
+  "signals": [
+    {
+      "signal_name": "PAP",
+      "original_label": "PAP",
+      "units": "mmHg",
+      "num_samples": 4319,
+      "file": "PAP.csv"
+    }
+  ]
+}

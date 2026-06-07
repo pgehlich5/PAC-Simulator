@@ -103,10 +103,20 @@ CHAMBER_PARAMS = {
 DEFAULT_PATIENT = "herbert"
 
 # Background cases — shared ECG/ABP loop, normally never switches on chamber change.
-# BACKGROUND_RV_CASE is used (if it exists) during RV passage to show catheter-
-# induced ectopy on the ECG.  Falls back to BACKGROUND_CASE when not in RV.
 BACKGROUND_CASE = "background"
-BACKGROUND_RV_CASE = "background_rv"
+
+# Optional per-chamber backgrounds — if a folder exists, the background ECG+ABP
+# swaps to it for that chamber (and resets in sync with the PAP clip), so e.g.
+# catheter-induced ectopy stays time-locked across ECG/ABP/PAP. Any subset may
+# exist; missing chambers fall back to the shared BACKGROUND_CASE. background_rv
+# alone is the classic case (Grover); a patient may define all five (Horace).
+BACKGROUND_CHAMBER_CASES = {
+    "SVC":  "background_svc",
+    "RA":   "background_ra",
+    "RV":   "background_rv",
+    "PA":   "background_pa",
+    "PCWP": "background_wedge",
+}
 
 # PAP case per chamber — switches when catheter moves
 PAP_CHAMBER_CASES = {
@@ -447,6 +457,16 @@ class RealWaveformLoader:
                 kernel = np.ones(5) / 5
                 self.signals["II"] = np.convolve(arr, kernel, mode="same")
                 print(f"  Smoothed coarse ECG (step={unique_steps.min():.4f} mV)")
+
+        # Center the ECG on 0 mV. The II display range is fixed at [-0.5, 0.5],
+        # so a DC-offset ECG (some MIMIC records sit at a ~0.5 mV baseline) would
+        # clip off the top of its canvas. Subtract the median (robust baseline);
+        # already-centered ECGs (|baseline| < 0.05) are left untouched.
+        if "II" in self.signals:
+            baseline = float(np.median(self.signals["II"]))
+            if abs(baseline) > 0.05:
+                self.signals["II"] = self.signals["II"] - baseline
+                print(f"  Centered ECG (removed {baseline:+.2f} mV DC offset)")
 
         print(f"Loaded case '{self.case_name}': "
               f"{len(self.signal_list)} signals, "
@@ -932,6 +952,13 @@ class PAC_Simulator_RealAdvancement:
         self.current_chamber_name = "SVC"
         self.active_pap_loader = self.pap_loaders[PAP_CHAMBER_CASES["SVC"]]
 
+        # If this patient has a per-chamber background for SVC, start on it so
+        # the ECG+ABP are synced from the first frame.
+        if getattr(self, "bg_chamber_loaders", None):
+            start_bg = self.bg_chamber_loaders.get(self.current_chamber_name)
+            if start_bg is not None:
+                self.bg_loader = start_bg
+
         # Determine display signals from background + PAP loaders
         all_available = set(self.bg_loader.signal_list)
         for loader in self.pap_loaders.values():
@@ -980,15 +1007,18 @@ class PAC_Simulator_RealAdvancement:
             self.bg_loader = EmptyWaveformLoader()
         self.bg_loader_default = self.bg_loader  # remember the normal bg
 
-        # Optional RV-specific background (e.g., catheter-induced ectopy)
-        self.bg_loader_rv = None
-        try:
-            self.bg_loader_rv = RealWaveformLoader(BACKGROUND_RV_CASE,
-                                                   patient=pt)
-            print(f"Loaded RV-specific background for {pt} "
-                  f"({self.bg_loader_rv.num_samples} samples)")
-        except (FileNotFoundError, ValueError):
-            pass  # no RV background — that's fine, just use the default
+        # Optional per-chamber backgrounds (ECG+ABP cut from each chamber's own
+        # window — keeps ectopy time-locked with the PAP). Any subset may exist;
+        # background_rv alone is the classic Grover case, all five is Horace.
+        self.bg_chamber_loaders = {}
+        for chamber, case_name in BACKGROUND_CHAMBER_CASES.items():
+            try:
+                self.bg_chamber_loaders[chamber] = RealWaveformLoader(
+                    case_name, patient=pt)
+                print(f"Loaded chamber background '{case_name}' "
+                      f"({self.bg_chamber_loaders[chamber].num_samples} samples)")
+            except (FileNotFoundError, ValueError):
+                pass  # no per-chamber background for this chamber — use default
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -1030,7 +1060,7 @@ class PAC_Simulator_RealAdvancement:
             },
         )
         self.bg_loader_default = self.bg_loader
-        self.bg_loader_rv = None  # simulated mode has no separate RV background
+        self.bg_chamber_loaders = {}  # simulated mode: no per-chamber backgrounds
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -1533,18 +1563,21 @@ class PAC_Simulator_RealAdvancement:
                 self.active_pap_loader = self.pap_loaders[new_pap_case]
                 self.pap_sample_index = 0  # only PAP restarts
 
-                # Swap background loader for RV if an RV-specific
-                # background exists (e.g., catheter-induced ectopy)
+                # Swap the background to a chamber-specific ECG+ABP if one
+                # exists (else the shared default). Reset the background index so
+                # it loops in sync with the (same-length) PAP clip, keeping any
+                # ectopy time-locked across ECG/ABP/PAP.
                 if (self.data_source == "real"
-                        and getattr(self, "bg_loader_rv", None) is not None):
-                    if new_chamber == "RV" and old_chamber != "RV":
-                        self.bg_loader = self.bg_loader_rv
+                        and getattr(self, "bg_chamber_loaders", None)):
+                    chamber_bg = self.bg_chamber_loaders.get(new_chamber)
+                    new_bg = (chamber_bg if chamber_bg is not None
+                              else self.bg_loader_default)
+                    if new_bg is not self.bg_loader:
+                        self.bg_loader = new_bg
                         self.bg_sample_index = 0
-                        print("  -> Switched to RV background (ectopy)")
-                    elif new_chamber != "RV" and old_chamber == "RV":
-                        self.bg_loader = self.bg_loader_default
-                        self.bg_sample_index = 0
-                        print("  -> Switched back to default background")
+                        label = (new_chamber if chamber_bg is not None
+                                 else "default")
+                        print(f"  -> Background swapped to {label}")
 
                 # Update numeric readouts and PA label for new chamber
                 self._recompute_stats()

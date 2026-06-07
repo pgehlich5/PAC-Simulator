@@ -55,11 +55,11 @@ archive/                  # Older/deprecated files
 
 ### Key Architectural Concepts
 - **Background/PAP split**: ECG and ABP play from a shared background loader that usually does not reset. PAP plays from per-chamber loaders that reset to sample 0 on chamber switch. This mimics a real bedside monitor.
-- **background_rv**: Optional per-patient folder. If present, the background loader swaps to it during RV passage (e.g., to show catheter-induced ectopy) and swaps back when leaving RV.
+- **Per-chamber backgrounds**: Optional `background_<chamber>/` folders (`background_svc/ra/rv/pa/wedge`). If present for a chamber, the background ECG+ABP swaps to it on entering that chamber and **resets in sync with the (same-length) PAP clip**, keeping e.g. catheter-induced ectopy time-locked across ECG/ABP/PAP. Any subset may exist: `background_rv` alone = Grover's classic RV ectopy; all five = Horace (p007251). Chambers without one fall back to the shared `background/`. Driven by `BACKGROUND_CHAMBER_CASES` + `bg_chamber_loaders`. (For per-chamber sync, extract each `background_<chamber>` from the SAME time window as its `pap_<chamber>`.)
 - **Patient discovery**: `discover_patients()` scans `waveform_data/` for folders containing `patient.json`. Patients are cyclable via a button in the toggle bar.
 - **Incremental rendering**: Waveforms draw pixel-by-pixel in a sweep line, not full redraws. Critical for Pi performance.
 - **Beat-by-beat generation**: In Simulated mode, `SyntheticWaveformLoader` generates one cardiac cycle at a time rather than pre-tiling. This allows HR and pressure parameters to change dynamically — new settings take effect at the next beat boundary with no glitch.
-- **Coarse ECG smoothing**: On load, if an ECG signal has quantization steps >0.01 mV, a 5-point moving average is auto-applied.
+- **ECG auto-fixes on load** (`RealWaveformLoader`): (1) coarse-quantization smoothing — if II has quantization steps >0.01 mV, a 5-point moving average is applied; (2) DC-offset centering — II is centered on 0 mV by subtracting its median baseline, because the II canvas range is fixed at -0.5..0.5 mV and some MIMIC records sit at a ~0.5 mV baseline that would otherwise clip off-screen. Already-centered ECGs (|baseline| < 0.05) are left untouched.
 - **PAP-only patients**: Patients without ECG/ABP (e.g., digitized waveforms) are supported via `EmptyWaveformLoader`. The layout uses spacer rows with uniform grid weighting so the PAP canvas stays the same size as on full-signal patients.
 
 ### Data Flow (Real Mode)

@@ -8,8 +8,8 @@ line is highly specific to a PAC float, so this is the basis for finding new
 PAC-advancement patients in MIMIC-III.
 
 Why morphology, not numbers: a "diastolic near zero" threshold cleanly
-separates RV from PA for some patients (p003914) but FAILS for others
-(herbert, whose RV diastolic ~14 ≈ his PA ~17). The shape, however, differs
+separates RV from PA for some patients (Grover) but FAILS for others
+(Herbert, whose RV diastolic ~14 ≈ his PA ~17). The shape, however, differs
 regardless of absolute pressure:
 
   RV : after the systolic peak, pressure drops fast to an EARLY nadir, then
@@ -22,7 +22,7 @@ So two shape features discriminate them, independent of absolute pressure:
   2. late-diastolic slope sign        (rising -> RV, falling -> PA)
 
 This script validates the detector on the four labeled clips we already own
-(herbert + p003914, RV and PA), with RA/wedge as extra negative controls.
+(Herbert + Grover, RV and PA), with RA/wedge as extra negative controls.
 No downloads — pure local validation before pointing it at the database.
 
 Usage:
@@ -205,7 +205,7 @@ def physiologic_ok(w, fs):
 
 
 def main():
-    patients = ["herbert", "p003914"]
+    patients = ["herbert_p001840", "grover_p003914"]
     # RV/PA are the real test; RA/wedge are negative controls.
     chambers = ["pap_rv", "pap_pa", "pap_ra", "pap_wedge"]
     truth = {"pap_rv": "RV", "pap_pa": "PA", "pap_ra": "PA", "pap_wedge": "PA"}

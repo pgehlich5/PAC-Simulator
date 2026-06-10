@@ -23,7 +23,7 @@ FS = 125  # sampling rate
 
 OUTPUT_BASE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "waveform_data", "p003914"
+    "waveform_data", "grover_p003914"
 )
 
 # Define what to extract

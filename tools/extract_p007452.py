@@ -25,7 +25,7 @@ FS = 125
 
 OUTPUT_BASE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "waveform_data", "p007452",
+    "waveform_data", "esther_p007452",
 )
 
 BG_START, BG_END = 180, 205          # clean background window (II + ABP)

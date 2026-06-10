@@ -12,8 +12,8 @@ scenarios/                # JSON hemodynamic scenario files for simulated mode
   septic_shock.json
 waveform_data/            # Patient waveform data (one folder per patient)
   LICENSE-ODbL.txt        # ODbL attribution for the bundled MIMIC waveforms
-  herbert/                # Teaching case: septic shock physiology
-  p003914/                # Teaching case: cardiogenic shock + severe AS (Grover)
+  herbert_p001840/        # Teaching case: septic shock physiology (Herbert)
+  grover_p003914/         # Teaching case: cardiogenic shock + severe AS (Grover)
     background/           # Shared ECG (II) + ABP for non-RV chambers
     background_rv/        # ECG + ABP during RV (shows catheter-induced ectopy)
     pap_svc/              # PAP waveform clips per chamber
@@ -71,7 +71,7 @@ archive/                  # Older/deprecated files
 ## Key Constants
 - `FRAME_RATE = 30` (fps)
 - `SCROLL_SPEED = 6` (pixels per frame = 180 px/s)
-- `DEFAULT_PATIENT = "herbert"`
+- `DEFAULT_PATIENT = "herbert_p001840"`
 - Chamber thresholds: SVC=0, RA=850, RV=1200, PA=2600, PCWP=3000 encoder steps
 
 ## Hardware (Pi Deployment)
@@ -113,7 +113,7 @@ A working pipeline sources new complete-float teaching cases (IVC/RA→RV→PA�
 ```bash
 # Run simulator (PC)
 python pac_simulator.py
-python pac_simulator.py --patient p003914
+python pac_simulator.py --patient grover_p003914
 python pac_simulator.py --mode simulated --scenario septic_shock
 
 # Run waveform viewer

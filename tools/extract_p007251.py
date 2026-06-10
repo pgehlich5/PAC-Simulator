@@ -30,7 +30,7 @@ RECORD_DIR = "mimic3wdb-matched/1.0/p00/p007251"
 FS = 125
 OUTPUT_BASE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "waveform_data", "p007251",
+    "waveform_data", "horace_p007251",
 )
 
 # Unique time windows (seconds)

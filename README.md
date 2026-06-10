@@ -28,7 +28,7 @@ python pac_simulator.py
 Other launches:
 
 ```bash
-python pac_simulator.py --patient p003914           # specific patient
+python pac_simulator.py --patient grover_p003914    # specific patient
 python pac_simulator.py --mode simulated            # generated waveforms
 python pac_simulator.py --mode simulated --scenario septic_shock
 ```
@@ -120,7 +120,7 @@ Credentialed Health Data Use Agreement and cannot be redistributed.
 ## License
 
 - **Code** — MIT License (see `LICENSE`)
-- **Waveform data** under `waveform_data/herbert/` and `waveform_data/p003914/`
+- **Waveform data** under `waveform_data/herbert_p001840/` and `waveform_data/grover_p003914/`
   — Open Data Commons Open Database License (ODbL) v1.0 (see
   `waveform_data/LICENSE-ODbL.txt` for required attribution and obligations)
 

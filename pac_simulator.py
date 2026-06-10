@@ -100,7 +100,7 @@ CHAMBER_PARAMS = {
 }
 
 # --- Patient and chamber-to-case mapping for real advancement mode -----------
-DEFAULT_PATIENT = "herbert"
+DEFAULT_PATIENT = "herbert_p001840"
 
 # Background cases — shared ECG/ABP loop, normally never switches on chamber change.
 BACKGROUND_CASE = "background"
@@ -136,7 +136,7 @@ def discover_patients():
 
     A valid patient folder must contain a patient.json and at least one
     pap_* subfolder.  Returns a list of dicts sorted by nickname:
-        [{"folder": "herbert", "nickname": "Herbert", ...}, ...]
+        [{"folder": "herbert_p001840", "nickname": "Herbert", ...}, ...]
     """
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "waveform_data")
@@ -1954,7 +1954,7 @@ def main():
     )
     parser.add_argument(
         "--patient", default=None,
-        help="Patient folder name (e.g., 'herbert', 'p003914'). "
+        help="Patient folder name (e.g., 'herbert_p001840', 'grover_p003914'). "
              "If omitted, the first discovered patient is used."
     )
     parser.add_argument(

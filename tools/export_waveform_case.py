@@ -9,7 +9,7 @@ resulting files are self-contained — the simulator never needs internet access
 Usage examples:
   # Export PAP waveform for a specific chamber
   python export_waveform_case.py \
-      --patient herbert \
+      --patient herbert_p001840 \
       --segment 3046879_0008 \
       --record-dir mimic3wdb-matched/1.0/p00/p001840 \
       --start 1076 \
@@ -19,7 +19,7 @@ Usage examples:
 
   # Export background signals (ECG, ABP)
   python export_waveform_case.py \
-      --patient herbert \
+      --patient herbert_p001840 \
       --segment 3046879_0008 \
       --record-dir mimic3wdb-matched/1.0/p00/p001840 \
       --start 1076 \
@@ -108,7 +108,7 @@ def download_window(segment_name, record_dir, start_sec, duration_sec):
 
 
 def save_case(record, case_name, segment_name, record_dir, start_sec,
-              duration_sec, description="", patient="herbert"):
+              duration_sec, description="", patient="herbert_p001840"):
     """Save each signal as a separate CSV in waveform_data/{patient}/{case_name}/."""
     base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "..", "waveform_data", patient, case_name)
@@ -217,8 +217,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--patient", default="herbert",
-                        help="Patient nickname folder (default: herbert)")
+    parser.add_argument("--patient", default="herbert_p001840",
+                        help="Patient nickname folder (default: herbert_p001840)")
     parser.add_argument("--segment", required=True,
                         help="Segment name (e.g., 3046879_0008)")
     parser.add_argument("--record-dir", required=True,

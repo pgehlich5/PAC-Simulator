@@ -131,11 +131,23 @@ PAP_CHAMBER_CASES = {
 BACKGROUND_SIGNALS = {"II", "ABP"}
 
 
+# Explicit display order for the patient buttons (left -> right). Folders not
+# listed here are appended afterward, alphabetically by nickname.
+PATIENT_ORDER = [
+    "powerpoint",        # Example from the PowerPoint
+    "esther_p007452",    # Esther
+    "herbert_p001840",   # Herbert
+    "horace_p007251",    # Horace
+    "grover_p003914",    # Grover
+]
+
+
 def discover_patients():
     """Scan waveform_data/ for available patient folders.
 
     A valid patient folder must contain a patient.json and at least one
-    pap_* subfolder.  Returns a list of dicts sorted by nickname:
+    pap_* subfolder.  Returns a list of dicts ordered by PATIENT_ORDER (then
+    any unlisted folders alphabetically by nickname):
         [{"folder": "herbert_p001840", "nickname": "Herbert", ...}, ...]
     """
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -153,8 +165,13 @@ def discover_patients():
                 patients.append(info)
             except (json.JSONDecodeError, KeyError):
                 pass
-    # Sort by nickname (or folder name as fallback)
-    patients.sort(key=lambda p: (p.get("nickname") or p["folder"]).lower())
+    # Order by PATIENT_ORDER; unlisted folders fall to the end, alphabetically.
+    def _order_key(p):
+        folder = p["folder"]
+        if folder in PATIENT_ORDER:
+            return (0, PATIENT_ORDER.index(folder), "")
+        return (1, 0, (p.get("nickname") or folder).lower())
+    patients.sort(key=_order_key)
     return patients
 
 

@@ -957,7 +957,11 @@ class PAC_Simulator_RealAdvancement:
         else:
             self.root.title("PAC Simulator - Real Advancement Mode")
         if parent is None:
-            self.root.geometry("1280x800")
+            # Only size to a window when we're NOT fullscreen — forcing a fixed
+            # geometry while fullscreen drops the app back to a floating window
+            # (this used to happen on every mode switch).
+            if not getattr(self.root, "_pac_fullscreen", False):
+                self.root.geometry("1280x800")
             self.root.configure(bg="#000000")
 
         if data_source == "simulated":
@@ -1980,12 +1984,27 @@ def main():
              "stats to the terminal. For performance debugging only; off by "
              "default so it never affects normal use."
     )
+    parser.add_argument(
+        "--windowed", action="store_true",
+        help="Open in a 1280x800 window instead of fullscreen. Handy for "
+             "desktop development; on the Pi, leave this off so it boots "
+             "fullscreen."
+    )
     args = parser.parse_args()
 
     root = tk.Tk()
     root.title("PAC Simulator - Philips IntelliVue")
     root.configure(bg="#000000")
-    root.attributes('-fullscreen', True)
+    # Remember the intent so mode setup doesn't drop us back to a window.
+    root._pac_fullscreen = not args.windowed
+    if root._pac_fullscreen:
+        root.attributes('-fullscreen', True)
+        # Re-assert after the window maps. Some Wayland compositors (labwc)
+        # ignore -fullscreen set before the first map, which is why it
+        # sometimes booted as a floating 1280x800 window instead.
+        root.after(250, lambda: root.attributes('-fullscreen', True))
+    else:
+        root.geometry("1280x800")
     root.bind("<Escape>", lambda e: root.destroy())
 
     # Discover available patients

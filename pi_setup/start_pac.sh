@@ -1,10 +1,11 @@
 #!/bin/bash
-# Restart the PAC Simulator — run by the "Restart Simulator" desktop icon.
+# Start (or restart) the PAC Simulator — run by the "Start Simulator" icon.
 #
-# How it works: stop the running simulator. If the watchdog (launch_pac.sh) is
-# running, it sees the non-zero exit and relaunches the app automatically. If
-# no watchdog is running (e.g. it gave up after repeated crashes, or was never
-# started), start a fresh one so the app comes back either way.
+# Acts as a single "Start" button for non-technical users: if the app isn't
+# running it launches it; if it is running it relaunches it cleanly. How:
+# stop any running simulator, then — if the watchdog (launch_pac.sh) is alive
+# it relaunches the app on its own; if not (it gave up after repeated crashes,
+# or was never started), start a fresh watchdog so the app comes up either way.
 
 REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 

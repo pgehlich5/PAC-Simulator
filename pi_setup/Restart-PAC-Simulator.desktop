@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Restart Simulator
+Comment=Stop and relaunch the PAC Simulator if it has crashed or frozen
+# Replace __INSTALL_DIR__ with your actual repo path before use.
+# The pi_setup/README.md install instructions include a one-line sed
+# command that does this for you.
+Exec=__INSTALL_DIR__/pi_setup/restart_pac.sh
+Icon=__INSTALL_DIR__/pi_setup/restart_icon.png
+Terminal=false
+Categories=Education;Science;

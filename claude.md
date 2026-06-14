@@ -79,7 +79,7 @@ archive/                  # Older/deprecated files
 - Rotary encoder on GPIO17/18 for catheter advancement
 - Reset button on GPIO2
 - Window manager: labwc (Wayland) — NOT X11 or Wayfire
-- Tkinter `-fullscreen` has taskbar issue on Wayland (known limitation)
+- Fullscreen: labwc/Wayland ignores `-fullscreen` set before the window's first map, so the app must re-assert it after map (`root.after(...)` in `main()`); the app boots fullscreen by default, `--windowed` gives a 1280x800 dev window
 - All UI must be touch-friendly (no keyboard on Pi)
 
 ## Data Sources

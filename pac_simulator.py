@@ -1928,18 +1928,21 @@ def build_toggle_bar(root, active_mode, switch_callback):
     labels = {}
     visible_modes = [m for m in MODES
                      if SHOW_SIMULATED_MODE or m[0] != "simulated"]
-    for mode_key, display_name in visible_modes:
-        is_active = (mode_key == active_mode)
-        lbl = tk.Label(
-            bar, text=display_name,
-            font=("Helvetica", 15, "bold"),
-            fg=TOGGLE_ACTIVE_FG if is_active else TOGGLE_INACTIVE_FG,
-            bg=TOGGLE_ACTIVE_BG if is_active else TOGGLE_INACTIVE_BG,
-            padx=24, pady=8, cursor="hand2",
-        )
-        lbl.pack(side=tk.LEFT, padx=(2, 0))
-        lbl.bind("<Button-1>", lambda e, m=mode_key: switch_callback(m))
-        labels[mode_key] = lbl
+    # Only show mode tabs when there's an actual choice. With a single mode a
+    # tab would just be a static, non-functional label, so hide it entirely.
+    if len(visible_modes) > 1:
+        for mode_key, display_name in visible_modes:
+            is_active = (mode_key == active_mode)
+            lbl = tk.Label(
+                bar, text=display_name,
+                font=("Helvetica", 15, "bold"),
+                fg=TOGGLE_ACTIVE_FG if is_active else TOGGLE_INACTIVE_FG,
+                bg=TOGGLE_ACTIVE_BG if is_active else TOGGLE_INACTIVE_BG,
+                padx=24, pady=8, cursor="hand2",
+            )
+            lbl.pack(side=tk.LEFT, padx=(2, 0))
+            lbl.bind("<Button-1>", lambda e, m=mode_key: switch_callback(m))
+            labels[mode_key] = lbl
 
     # Quit button on the far right
     quit_btn = tk.Label(

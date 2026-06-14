@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Update Simulator
+Comment=Download the latest version from GitHub and restart the simulator
+# Replace __INSTALL_DIR__ with your actual repo path before use.
+# The pi_setup/README.md install instructions include a one-line sed
+# command that does this for you.
+Exec=__INSTALL_DIR__/pi_setup/update_pac.sh
+Icon=__INSTALL_DIR__/pi_setup/update_icon.png
+Terminal=false
+Categories=Education;Science;

@@ -46,11 +46,15 @@ Keyboard controls when no rotary encoder is connected:
 
 ## Patients included
 
-| Patient    | Waveforms                              | Notes                                              |
-|------------|----------------------------------------|----------------------------------------------------|
-| Herbert    | ECG + ABP + per-chamber PAP            | Teaching case: septic shock                        |
-| Grover     | ECG + ABP + per-chamber PAP + RV ectopy| Teaching case: cardiogenic shock + severe AS       |
-| PowerPoint | PAP only (no ECG/ABP)                  | Digitized from a teaching slide via WebPlotDigitizer |
+Listed in on-screen button order:
+
+| Patient    | Waveforms                                      | Notes                                                          |
+|------------|------------------------------------------------|---------------------------------------------------------------|
+| PowerPoint | PAP only (no ECG/ABP)                          | Digitized from a teaching slide via WebPlotDigitizer          |
+| Esther     | ECG + ABP + per-chamber PAP                    | Complete PAC float (SVC→RA→RV→PA→wedge); first algorithm-found case |
+| Herbert    | ECG + ABP + per-chamber PAP                    | Teaching case: septic shock                                   |
+| Horace     | ECG + ABP + per-chamber PAP (per-chamber bg)   | Complete float with severe pulmonary hypertension; chamber-locked ectopy |
+| Grover     | ECG + ABP + per-chamber PAP + RV ectopy        | Teaching case: cardiogenic shock + severe AS                  |
 
 Clinical vignettes shipped publicly with this repository are **fictional
 teaching cases** written for educational use. They are not derived from

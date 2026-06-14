@@ -24,6 +24,8 @@ waveform_data/            # Patient waveform data (one folder per patient)
     clinical_data/        # (gitignored) Credentialed-only clinical data — local
     patient.json          # Nickname + fictional summary (public-safe)
     vignette.txt          # Public fictional teaching vignette
+  esther_p007452/         # Complete float (first algorithm-found); ECG+ABP+PAP, no per-chamber bg
+  horace_p007251/         # Complete float, severe PHTN; all five background_<chamber>/ (per-chamber bg)
   powerpoint/             # Digitized from a teaching slide (PAP only, no ECG/ABP)
 tools/                    # Supporting scripts
   FLOAT_FINDING.md        # ★ Full guide to the wedge-anchored float-finding pipeline

@@ -1889,6 +1889,12 @@ MODES = [
     ("simulated", "Simulated Patient"),
 ]
 
+# Simulated mode isn't ready for general use yet. When False, its toggle tab is
+# hidden from the touch UI so learners only ever see Real Patient mode. The
+# code path is left fully intact and is still reachable for development via
+# `--mode simulated` on the command line. Flip this to True to re-expose the tab.
+SHOW_SIMULATED_MODE = False
+
 TOGGLE_ACTIVE_BG = "#333333"
 TOGGLE_ACTIVE_FG = "#FFD84D"
 TOGGLE_INACTIVE_BG = "#111111"
@@ -1920,7 +1926,9 @@ def build_toggle_bar(root, active_mode, switch_callback):
     bar.pack_propagate(False)
 
     labels = {}
-    for mode_key, display_name in MODES:
+    visible_modes = [m for m in MODES
+                     if SHOW_SIMULATED_MODE or m[0] != "simulated"]
+    for mode_key, display_name in visible_modes:
         is_active = (mode_key == active_mode)
         lbl = tk.Label(
             bar, text=display_name,

@@ -13,7 +13,8 @@ below assume `~/PAC-Simulator/`:
 git clone https://github.com/pgehlich5/PAC-Simulator.git ~/PAC-Simulator
 cd ~/PAC-Simulator
 
-# Make launcher executable
+# launch_pac.sh is tracked as executable in git, so a fresh clone/pull keeps
+# the +x bit. This chmod is just a harmless safety net (no-op on a clean clone).
 chmod +x pi_setup/launch_pac.sh
 
 # --- Autostart on boot ---

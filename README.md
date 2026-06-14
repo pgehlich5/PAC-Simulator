@@ -14,9 +14,12 @@ Designed to run on a desktop PC for practice or on a Raspberry Pi 5 driving a
   open-access [MIMIC-III Waveform Database](https://physionet.org/content/mimic3wdb/1.0/).
   Advancing the catheter switches PAP clips per chamber while ECG and arterial
   pressure stream continuously, mirroring a real bedside monitor.
-- **Simulated mode** — mathematically generated waveforms (NeuroKit2 for ECG,
-  Gaussian models for ABP/PAP) driven by scenario JSON files. Heart rate and
-  PA pressure are adjustable in real time via touch-friendly buttons.
+- **Simulated mode** _(experimental — hidden by default)_ — mathematically
+  generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) driven by
+  scenario JSON files. Heart rate and PA pressure are adjustable in real time via
+  touch-friendly buttons. Still a work in progress, so it's hidden from the UI;
+  launch it with `--mode simulated` (see below) or re-enable the toggle by setting
+  `SHOW_SIMULATED_MODE = True` in `pac_simulator.py`.
 
 ## Quick start
 

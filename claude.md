@@ -51,7 +51,7 @@ archive/                  # Older/deprecated files
 
 ### Two Modes
 - **Real Patient mode** (default): Plays back real MIMIC-III waveforms. Catheter advancement switches PAP clips while ECG+ABP continue uninterrupted.
-- **Simulated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files. Supports dynamic heart rate adjustment via touch-friendly +/- buttons. Includes respiratory variation on PA/wedge traces and HR-dependent diastolic compression.
+- **Simulated mode**: Mathematically generated waveforms (NeuroKit2 for ECG, Gaussian models for ABP/PAP) using scenario JSON files. Supports dynamic heart rate adjustment via touch-friendly +/- buttons. Includes respiratory variation on PA/wedge traces and HR-dependent diastolic compression. **Work in progress — not yet exposed in the touch UI.** Its toggle tab is hidden behind `SHOW_SIMULATED_MODE = False` (when only one mode is visible the mode tabs are hidden entirely); the code path is intact and still launchable for development via `--mode simulated`. Flip the flag to `True` to re-expose it.
 
 ### Key Architectural Concepts
 - **Background/PAP split**: ECG and ABP play from a shared background loader that usually does not reset. PAP plays from per-chamber loaders that reset to sample 0 on chamber switch. This mimics a real bedside monitor.

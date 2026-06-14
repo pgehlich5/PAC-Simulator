@@ -74,8 +74,8 @@ Step thresholds for chamber transitions (configurable in `pac_simulator.py`):
 |---------|------------|
 | SVC     | 0 – 850    |
 | RA      | 850 – 1200 |
-| RV      | 1200 – 2600|
-| PA      | 2600 – 3000|
+| RV      | 1200 – 2200|
+| PA      | 2200 – 3000|
 | PCWP    | 3000+      |
 
 A 20-step stateful hysteresis dead zone absorbs encoder backlash at boundaries.

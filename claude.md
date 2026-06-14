@@ -74,7 +74,7 @@ archive/                  # Older/deprecated files
 - `FRAME_RATE = 30` (fps)
 - `SCROLL_SPEED = 6` (pixels per frame = 180 px/s)
 - `DEFAULT_PATIENT = "herbert_p001840"`
-- Chamber thresholds: SVC=0, RA=850, RV=1200, PA=2600, PCWP=3000 encoder steps
+- Chamber thresholds: SVC=0, RA=850, RV=1200, PA=2200, PCWP=3000 encoder steps
 
 ## Hardware (Pi Deployment)
 - Raspberry Pi 5 with Waveshare 10.1" DSI touchscreen (landscape)

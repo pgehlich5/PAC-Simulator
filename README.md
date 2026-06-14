@@ -76,6 +76,65 @@ Step thresholds for chamber transitions (configurable in `pac_simulator.py`):
 
 A 20-step stateful hysteresis dead zone absorbs encoder backlash at boundaries.
 
+## Raspberry Pi configuration
+
+Step-by-step setup for a fresh Pi (repeat this for each build).
+
+### 1. OS and dependencies
+
+- Flash **Raspberry Pi OS Bookworm (64-bit)** and boot to the desktop. Bookworm
+  uses **labwc** (Wayland) by default — keep it. X11 and Wayfire have known
+  issues with this panel (lost display rotation; inverted cursor over remote
+  sharing).
+- Update and install Python dependencies:
+  ```bash
+  sudo apt update && sudo apt full-upgrade -y
+  git clone https://github.com/pgehlich5/PAC-Simulator.git ~/PAC-Simulator
+  cd ~/PAC-Simulator
+  pip install --break-system-packages -r requirements.txt
+  pip install --break-system-packages "numpy<2"   # must stay on numpy 1.x for matplotlib
+  ```
+
+### 2. Display + touch rotation (the important part)
+
+The Waveshare 10.1" is a native-portrait panel used in landscape, so it must be
+rotated — and **the touch input has to rotate with it.** On Bookworm, do this
+through the GUI, which syncs display *and* touch together:
+
+1. **Menu → Preferences → Screen Configuration**
+2. **Screen** menu → the DSI output (e.g. **DSI-2**) → **Orientation** → choose
+   your landscape orientation → **Apply**
+3. **Screen Configuration → Touchscreen** → set **Mouse Emulation** (tap = left
+   click, long-press = right click). "Multitouch" mode feels wrong for tapping
+   buttons.
+
+If touch ever feels mirrored or offset after this, re-open Screen Configuration,
+switch the orientation to another value → Apply, then back to the correct one →
+Apply. That forces the touch mapping to re-bind to the rotated display.
+
+> ⚠️ **Do not use Appearance Settings → Defaults → "Set Defaults".** It resets
+> desktop/scaling settings and can desync the touch panel from the display (taps
+> land across the screen). If that happens, redo step 2.
+
+**Command-line fallback** (only if the GUI sync won't hold): create
+`/etc/udev/rules.d/99-waveshare-touch.rules` with a rotation matrix, then reboot:
+
+```
+SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="<matrix>"
+```
+
+Waveshare's matrices: `90° = "0 -1 1 1 0 0"`, `180° = "-1 0 1 0 -1 1"`,
+`270° = "0 1 0 -1 0 1"`. Prefer the GUI method above — on Bookworm a manual
+matrix can conflict with the compositor's own touch mapping. See the
+[10.1-DSI-TOUCH-A wiki](https://www.waveshare.com/wiki/10.1-DSI-TOUCH-A).
+
+### 3. Auto-start, on-screen Start/Update buttons, crash recovery
+
+See **[`pi_setup/README.md`](pi_setup/README.md)** — it covers launching the
+simulator automatically at boot, the touch-friendly **Start** and **Update**
+desktop icons, and the self-healing watchdog that relaunches the app if it
+crashes.
+
 ## Adding your own patient
 
 Create a folder under `waveform_data/` containing a `patient.json` and one or

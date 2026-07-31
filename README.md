@@ -50,8 +50,8 @@ Listed in on-screen button order:
 
 | Patient    | Waveforms                                      | Notes                                                          |
 |------------|------------------------------------------------|---------------------------------------------------------------|
-| Ida        | ECG + ABP + per-chamber PAP (per-chamber bg)   | **Synthetic** textbook reference case — start here (see below) |
 | PowerPoint | PAP only (no ECG/ABP)                          | Digitized from a teaching slide via WebPlotDigitizer          |
+| Perfect Patty | ECG + ABP + per-chamber PAP (per-chamber bg) | **Synthetic** textbook reference case — start here (see below); the patient the app opens on |
 | Esther     | ECG + ABP + per-chamber PAP                    | Complete PAC float (SVC→RA→RV→PA→wedge); first algorithm-found case |
 | Herbert    | ECG + ABP + per-chamber PAP                    | Teaching case: septic shock                                   |
 | Horace     | ECG + ABP + per-chamber PAP (per-chamber bg)   | Complete float with severe pulmonary hypertension; chamber-locked ectopy |
@@ -61,7 +61,7 @@ Clinical vignettes shipped publicly with this repository are **fictional
 teaching cases** written for educational use. They are not derived from
 individual patient records.
 
-### Ida — the synthetic reference case
+### Perfect Patty — the synthetic reference case
 
 `waveform_data/ideal/` is **not patient data and not MIMIC-III**. Every sample
 is generated from a landmark model: each teaching feature (a wave, c wave, x/y
@@ -78,7 +78,10 @@ mean 10 (v > a, waves delayed). RV and PA share a systolic pressure on purpose:
 the diastolic step-up and the appearance of a dicrotic notch are what tell you
 the tip crossed the pulmonic valve.
 
-Because every clip is a whole number of identical, phase-aligned beats, Ida sets
+She ships no `vignette.txt` on purpose — she is a reference waveform rather than a
+case with a history, so the "Patient History" button is hidden for her.
+
+Because every clip is a whole number of identical, phase-aligned beats, she sets
 `"continuous_phase": true` in her `patient.json`. The simulator then carries the
 playback position across a chamber switch instead of restarting the beat, so the
 ECG never breaks stride and the PAP morphology changes mid-beat — the way it does

@@ -134,8 +134,8 @@ BACKGROUND_SIGNALS = {"II", "ABP"}
 # Explicit display order for the patient buttons (left -> right). Folders not
 # listed here are appended afterward, alphabetically by nickname.
 PATIENT_ORDER = [
-    "ideal",             # Ida - synthetic textbook reference case (start here)
     "powerpoint",        # Example from the PowerPoint
+    "ideal",             # Perfect Patty - synthetic textbook reference case
     "esther_p007452",    # Esther
     "herbert_p001840",   # Herbert
     "horace_p007251",    # Horace

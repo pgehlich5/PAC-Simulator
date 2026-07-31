@@ -7,7 +7,7 @@ Run this from the root of your PAC-Simulator checkout:
     python setup_ideal_patient.py
 
 It does two things:
-  1. generates waveform_data/ideal/  (all CSVs + metadata + vignette)
+  1. generates waveform_data/ideal/  (all CSVs + metadata)
   2. registers the patient in pac_simulator.py (two small edits)
 
 Both steps are safe to run twice -- it detects work already done and skips it.
@@ -186,38 +186,6 @@ CHAMBER_LABEL = {"svc": "Superior Vena Cava", "ra": "Right Atrium",
                  "wedge": "Pulmonary Capillary Wedge"}
 
 
-VIGNETTE = """
-REFERENCE CASE — Idealized Waveforms
-
-This is not a real patient. Every waveform here is generated from a
-landmark model so that each teaching feature appears exactly where the
-textbook draws it. Use this case first, before the real MIMIC-III
-patients, to learn what each chamber is supposed to look like.
-
-Normal hemodynamics, HR 75, normal sinus rhythm.
-
-  SVC     mean 3        damped a / c / v
-  RA      mean 4        a > v; x and y descents visible
-  RV      25/5          sharp upstroke, no dicrotic notch,
-                        diastolic pressure rises toward end-diastole
-  PA      25/10         SAME systolic as RV; diastolic STEPS UP;
-                        dicrotic notch at pulmonic valve closure
-  PCWP    mean 10       loses systolic pulsatility; v > a;
-                        waves delayed (retrograde transmission);
-                        mean PCWP is approximately PA diastolic
-
-Three things to carry into the real patients:
-
-1. RV and PA systolic pressures are the same. The diastolic step-up
-   and the appearance of a dicrotic notch tell you the tip crossed
-   the pulmonic valve — not a change in the peak.
-2. The a wave follows the P wave. In the wedge position the a and v
-   waves arrive late, because the pressure is transmitted backward
-   through the pulmonary vasculature.
-3. a > v in the right atrium, v > a in the wedge.
-"""
-
-
 def write_csv(path, header, values):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -277,7 +245,7 @@ def build(out_root):
 
     with open(os.path.join(out_root, "patient.json"), "w") as f:
         json.dump({
-            "nickname": "Ida",
+            "nickname": "Perfect Patty",
             "summary_fictional": "Teaching case: idealized textbook PAC float "
                                  "with normal hemodynamics",
             "waveform_source": "Synthetic (landmark model) - not patient data",
@@ -289,8 +257,9 @@ def build(out_root):
             "continuous_phase": True,
         }, f, indent=2)
 
-    with open(os.path.join(out_root, "vignette.txt"), "w", encoding="utf-8") as f:
-        f.write(VIGNETTE.strip() + "\n")
+    # No vignette.txt on purpose. She is a reference waveform, not a case with
+    # a history, and the simulator hides the "Patient History" button entirely
+    # when a patient has no vignette.
 
     print(f"Built ideal patient in {out_root}")
     print(f"  {SAMPLES_PER_BEAT} samples/beat x {BEATS} beats = {N} samples "
@@ -303,7 +272,11 @@ def build(out_root):
 # =============================================================================
 # Installer
 # =============================================================================
-PATIENT_ORDER_LINE = '    "ideal",             # Ida - synthetic textbook reference case (start here)\n'
+PATIENT_ORDER_LINE = '    "ideal",             # Perfect Patty - synthetic textbook reference case\n'
+
+# She sits immediately to the right of the PowerPoint example, so anchor the
+# insertion on that entry and fall back to the head of the list if it is gone.
+PATIENT_ORDER_ANCHOR = '    "powerpoint",'
 
 
 def patch_simulator(path="pac_simulator.py"):
@@ -329,9 +302,13 @@ def patch_simulator(path="pac_simulator.py"):
         else:
             print("  !! could not find DEFAULT_PATIENT -- edit it by hand")
 
-    # 2. Put it first in the patient tab order.
+    # 2. Place it in the patient tab order, just right of the PowerPoint example.
     if '"ideal",' in src.split("PATIENT_ORDER = [")[-1].split("]")[0]:
-        print("  - 'ideal' already first in PATIENT_ORDER (skipped)")
+        print("  - 'ideal' already in PATIENT_ORDER (skipped)")
+    elif PATIENT_ORDER_ANCHOR in src:
+        anchor_line_end = src.index("\n", src.index(PATIENT_ORDER_ANCHOR)) + 1
+        src = src[:anchor_line_end] + PATIENT_ORDER_LINE + src[anchor_line_end:]
+        changed.append("PATIENT_ORDER -> 'ideal' after 'powerpoint'")
     elif "PATIENT_ORDER = [\n" in src:
         src = src.replace("PATIENT_ORDER = [\n",
                           "PATIENT_ORDER = [\n" + PATIENT_ORDER_LINE, 1)
@@ -370,8 +347,8 @@ Done. Try it:
 
     python pac_simulator.py --windowed
 
-Ida should be the first patient tab and the one it opens on.
-Use + and - to advance and withdraw the catheter.
+Perfect Patty should be the tab just right of PowerPoint, and the
+patient it opens on. Use + and - to advance and withdraw the catheter.
 
 To commit:
 

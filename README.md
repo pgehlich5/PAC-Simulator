@@ -78,6 +78,14 @@ mean 10 (v > a, waves delayed). RV and PA share a systolic pressure on purpose:
 the diastolic step-up and the appearance of a dicrotic notch are what tell you
 the tip crossed the pulmonic valve.
 
+Because every clip is a whole number of identical, phase-aligned beats, Ida sets
+`"continuous_phase": true` in her `patient.json`. The simulator then carries the
+playback position across a chamber switch instead of restarting the beat, so the
+ECG never breaks stride and the PAP morphology changes mid-beat — the way it does
+when the tip actually crosses a valve. Patients extracted from real recordings
+must leave this off; their per-chamber clips are specific time windows that have
+to restart together to stay time-locked.
+
 **Regenerate it; don't hand-edit the CSVs.** The waveforms are the output of a
 model, so edits made directly to the CSVs are lost the next time anyone runs:
 

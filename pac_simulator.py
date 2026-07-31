@@ -176,6 +176,22 @@ def discover_patients():
     return patients
 
 
+def load_patient_info(patient=None):
+    """Read a patient's patient.json (nickname, summary, feature flags).
+
+    Returns {} if the file is missing or unreadable, so callers can just
+    .get() what they need.
+    """
+    patient = patient or DEFAULT_PATIENT
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "waveform_data", patient, "patient.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 def load_clinical_vignette(patient=None):
     """Load the clinical scenario vignette text for a patient.
 
@@ -988,9 +1004,12 @@ class PAC_Simulator_RealAdvancement:
         self.display_signals = [s for s in SIGNAL_DISPLAY_ORDER
                                 if s in all_available]
 
-        # Playback state — two independent sample indices
-        self.bg_sample_index = 0       # never resets on chamber switch
-        self.pap_sample_index = 0      # resets to 0 on chamber switch
+        # Playback state — two independent sample indices.
+        # bg_sample_index: only resets when the background loader itself swaps.
+        # pap_sample_index: resets on chamber switch.
+        # Both are instead carried across the switch when continuous_phase is set.
+        self.bg_sample_index = 0
+        self.pap_sample_index = 0
         self.running = True
         self.sample_accumulator = 0.0
         self.samples_per_frame = self.bg_loader.fs / FRAME_RATE
@@ -1062,6 +1081,31 @@ class PAC_Simulator_RealAdvancement:
                 + ", ".join(set(PAP_CHAMBER_CASES.values()))
             )
 
+        # Opt-in via "continuous_phase": true in patient.json. Meaningful only
+        # for patients whose clips are periodic loops of a single beat, all the
+        # same length and phase-aligned (i.e. synthetic — see Ida). For those,
+        # a chamber switch carries the sample indices over instead of zeroing
+        # them: the beat in progress isn't truncated, and the PAP morphology
+        # changes mid-beat, which is what crossing a valve actually looks like.
+        #
+        # Patients cut from real recordings (Grover, Horace) must NOT set this.
+        # Their per-chamber clips are specific time windows, so both indices
+        # have to reset together for the ectopy to stay time-locked.
+        self.continuous_phase = bool(
+            load_patient_info(pt).get("continuous_phase"))
+        if self.continuous_phase:
+            lengths = {ldr.num_samples for ldr in self.pap_loaders.values()}
+            lengths |= {ldr.num_samples
+                        for ldr in self.bg_chamber_loaders.values()}
+            if len(lengths) > 1:
+                print(f"WARNING: patient '{pt}' sets continuous_phase but its "
+                      f"clips have differing lengths {sorted(lengths)} — "
+                      f"phase alignment across chamber switches is not "
+                      f"guaranteed.")
+            else:
+                print(f"Phase-continuous playback enabled "
+                      f"({lengths.pop() if lengths else 0} samples/clip)")
+
     def _init_simulated_loaders(self, scenario):
         """Generate waveform data from mathematical models."""
         scenario = scenario or load_scenario("normal")
@@ -1083,6 +1127,7 @@ class PAC_Simulator_RealAdvancement:
         )
         self.bg_loader_default = self.bg_loader
         self.bg_chamber_loaders = {}  # simulated mode: no per-chamber backgrounds
+        self.continuous_phase = False  # beats are generated on demand, not looped
 
         # Per-chamber PAP loaders
         self.pap_loaders = {}
@@ -1583,12 +1628,17 @@ class PAC_Simulator_RealAdvancement:
             new_pap_case = PAP_CHAMBER_CASES.get(new_chamber)
             if new_pap_case and new_pap_case in self.pap_loaders:
                 self.active_pap_loader = self.pap_loaders[new_pap_case]
-                self.pap_sample_index = 0  # only PAP restarts
+                if self.continuous_phase:
+                    # Carry the phase over — don't truncate the beat in progress.
+                    self.pap_sample_index %= self.active_pap_loader.num_samples
+                else:
+                    self.pap_sample_index = 0  # only PAP restarts
 
                 # Swap the background to a chamber-specific ECG+ABP if one
-                # exists (else the shared default). Reset the background index so
-                # it loops in sync with the (same-length) PAP clip, keeping any
-                # ectopy time-locked across ECG/ABP/PAP.
+                # exists (else the shared default). The background index moves
+                # in lockstep with the PAP index — both reset, or (under
+                # continuous_phase) both carry over — so the same-length clips
+                # stay time-locked across ECG/ABP/PAP.
                 if (self.data_source == "real"
                         and getattr(self, "bg_chamber_loaders", None)):
                     chamber_bg = self.bg_chamber_loaders.get(new_chamber)
@@ -1596,7 +1646,10 @@ class PAC_Simulator_RealAdvancement:
                               else self.bg_loader_default)
                     if new_bg is not self.bg_loader:
                         self.bg_loader = new_bg
-                        self.bg_sample_index = 0
+                        if self.continuous_phase and new_bg.num_samples:
+                            self.bg_sample_index %= new_bg.num_samples
+                        else:
+                            self.bg_sample_index = 0
                         label = (new_chamber if chamber_bg is not None
                                  else "default")
                         print(f"  -> Background swapped to {label}")

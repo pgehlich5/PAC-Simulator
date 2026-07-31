@@ -281,6 +281,12 @@ def build(out_root):
             "summary_fictional": "Teaching case: idealized textbook PAC float "
                                  "with normal hemodynamics",
             "waveform_source": "Synthetic (landmark model) - not patient data",
+            # Every clip here is a whole number of identical beats, all the same
+            # length and phase-aligned, so the simulator can carry the sample
+            # index across a chamber switch instead of restarting the beat.
+            # Keeps the ECG continuous; the PAP morphology changes mid-beat,
+            # the way it does when the tip actually crosses a valve.
+            "continuous_phase": True,
         }, f, indent=2)
 
     with open(os.path.join(out_root, "vignette.txt"), "w", encoding="utf-8") as f:

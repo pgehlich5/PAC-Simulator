@@ -1,0 +1,27 @@
+{
+  "case_name": "background_ra",
+  "description": "Idealized ECG + ABP - Right Atrium",
+  "sampling_rate_hz": 125,
+  "num_samples": 2000,
+  "source": {
+    "database": "synthetic",
+    "method": "landmark model + PCHIP interpolation",
+    "heart_rate_bpm": 75,
+    "respiratory_rate_bpm": 15,
+    "generator": "setup_ideal_patient.py"
+  },
+  "signals": [
+    {
+      "signal_name": "II",
+      "units": "mV",
+      "num_samples": 2000,
+      "file": "II.csv"
+    },
+    {
+      "signal_name": "ABP",
+      "units": "mmHg",
+      "num_samples": 2000,
+      "file": "ABP.csv"
+    }
+  ]
+}

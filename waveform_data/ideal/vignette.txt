@@ -1,0 +1,28 @@
+REFERENCE CASE — Idealized Waveforms
+
+This is not a real patient. Every waveform here is generated from a
+landmark model so that each teaching feature appears exactly where the
+textbook draws it. Use this case first, before the real MIMIC-III
+patients, to learn what each chamber is supposed to look like.
+
+Normal hemodynamics, HR 75, normal sinus rhythm.
+
+  SVC     mean 3        damped a / c / v
+  RA      mean 4        a > v; x and y descents visible
+  RV      25/5          sharp upstroke, no dicrotic notch,
+                        diastolic pressure rises toward end-diastole
+  PA      25/10         SAME systolic as RV; diastolic STEPS UP;
+                        dicrotic notch at pulmonic valve closure
+  PCWP    mean 10       loses systolic pulsatility; v > a;
+                        waves delayed (retrograde transmission);
+                        mean PCWP is approximately PA diastolic
+
+Three things to carry into the real patients:
+
+1. RV and PA systolic pressures are the same. The diastolic step-up
+   and the appearance of a dicrotic notch tell you the tip crossed
+   the pulmonic valve — not a change in the peak.
+2. The a wave follows the P wave. In the wedge position the a and v
+   waves arrive late, because the pressure is transmitted backward
+   through the pulmonary vasculature.
+3. a > v in the right atrium, v > a in the wedge.

@@ -100,7 +100,7 @@ CHAMBER_PARAMS = {
 }
 
 # --- Patient and chamber-to-case mapping for real advancement mode -----------
-DEFAULT_PATIENT = "herbert_p001840"
+DEFAULT_PATIENT = "ideal"
 
 # Background cases — shared ECG/ABP loop, normally never switches on chamber change.
 BACKGROUND_CASE = "background"
@@ -134,6 +134,7 @@ BACKGROUND_SIGNALS = {"II", "ABP"}
 # Explicit display order for the patient buttons (left -> right). Folders not
 # listed here are appended afterward, alphabetically by nickname.
 PATIENT_ORDER = [
+    "ideal",             # Ida - synthetic textbook reference case (start here)
     "powerpoint",        # Example from the PowerPoint
     "esther_p007452",    # Esther
     "herbert_p001840",   # Herbert
@@ -192,7 +193,7 @@ def load_clinical_vignette(patient=None):
     ]
     for path in candidate_paths:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except FileNotFoundError:
             continue

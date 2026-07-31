@@ -48,6 +48,8 @@ tools/                    # Supporting scripts
   process_pa_waveform.py  # Processes PA waveform from WPD (zero-ref calibration,
                           #   whole-beat trim). Replaced the old two-part stitcher.
   process_ra_waveform.py  # Processes RA waveform from WPD
+  process_rv_waveform.py  # Processes RV waveform from WPD (uses CubicSpline, not
+                          #   PCHIP — reproduces the original; see note below)
   process_wedge_waveform.py  # Processes PAWP waveform from WPD
   wpd_*_raw.csv           # Raw WebPlotDigitizer extractions
   wpd_*_resampled.csv     # Resampled 125 Hz waveforms ready for simulator
@@ -117,6 +119,7 @@ archive/                  # Older/deprecated files
   - **X calibration**: calibrate in *grid squares*, then set `GRID_TO_SEC` in the processing script — 0.04 for small squares (25 mm/s paper), 0.2 for large. **Check the result against heart rate**: the PA re-trace was calibrated on large squares while the older chambers used small, and only HR made that visible (0.2 → 93 bpm, matching the rest of the slide; 0.04 → an impossible 465).
   - **Y calibration**: the UCHealth slide has NO pressure scale, so mmHg cannot be read off it. Best available: click the zero-pressure baseline as the FIRST point (`ZERO_REF` in `process_pa_waveform.py` strips it and uses it as 0 mmHg), then pin systolic to a chosen value; diastolic then falls out of real geometry instead of being invented. Grab that reference point in *click order, before sorting by x* — a nearby trace point often sits a hair further left. The older chambers instead min-max stretch onto hardcoded ranges, which is outlier-sensitive: one stray click rescales the whole waveform.
   - **Trim to whole beats** (cut at diastolic nadirs) so clips loop without a step, and to drop the low stray point a hand trace often starts with.
+  - **Every chamber must have a processing script.** RV went years with a committed `wpd_rv_resampled.csv` and nothing that generated it, so it was the one chamber that couldn't be regenerated. `process_rv_waveform.py` backfills it; the recipe was reverse-engineered from the committed output (0.04 s/grid, min-max 0–28, clip at 0, **CubicSpline**) and reproduces it to within 0.25 mmHg. It is the one script still on CubicSpline — switching it to PCHIP removes the overshoot but shifts the trace up to 3.65 mmHg at some peaks, so it stays on cubic to keep RV looking unchanged. It also prints a diff against the committed CSV, so a future edit that moves the waveform says so instead of doing it quietly.
 
 ## Finding New PAC-Float Patients (wedge-anchored pipeline)
 A working pipeline sources new complete-float teaching cases (IVC/RA→RV→PA→wedge) from MIMIC-III.

@@ -6,13 +6,13 @@
     "origin": "UCHealth PA Catheter teaching slide"
   },
   "sampling_rate_hz": 125,
-  "num_samples": 1477,
+  "num_samples": 321,
   "signals": [
     {
       "signal_name": "PAP",
       "original_label": "PAP",
       "units": "mmHg",
-      "num_samples": 1477,
+      "num_samples": 321,
       "file": "PAP.csv"
     }
   ]

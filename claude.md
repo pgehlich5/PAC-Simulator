@@ -45,7 +45,8 @@ tools/                    # Supporting scripts
   extract_p003914.py      # Waveform extraction script for Grover (extraction template)
   extract_p007452.py      # Extraction for Esther (first algorithm-found float)
   build_powerpoint_patient.py  # Converts WPD-digitized CSVs into patient folder
-  stitch_pa_waveform.py   # Stitches two-part PA waveform with crossfade
+  process_pa_waveform.py  # Processes PA waveform from WPD (zero-ref calibration,
+                          #   whole-beat trim). Replaced the old two-part stitcher.
   process_ra_waveform.py  # Processes RA waveform from WPD
   process_wedge_waveform.py  # Processes PAWP waveform from WPD
   wpd_*_raw.csv           # Raw WebPlotDigitizer extractions
@@ -112,7 +113,10 @@ archive/                  # Older/deprecated files
 - `dismissed_segments.json` in `tools/` tracks segments flagged as bad data in the viewer
 - Adding a new patient: create folder in `waveform_data/`, add `patient.json`, background/, pap_*/ folders, and optionally `vignette.txt` (public) and/or `clinical_data/clinical_vignette.txt` (credentialed). See `tools/extract_p003914.py` for an example extraction script. Background signals are optional — PAP-only patients work fine.
 - **Vignette loading**: `load_clinical_vignette()` prefers `clinical_data/clinical_vignette.txt` (gitignored, credentialed) over `vignette.txt` (committed, fictional). Local credentialed setups see the real story; public clones see the fictional one. Both work without code changes.
-- **WebPlotDigitizer workflow**: Waveforms can be digitized from printed/PDF sources using WPD v4 (https://automeris.io/WebPlotDigitizer/). Use 0.04 s/grid for X-axis calibration (standard ECG paper at 25mm/s). Raw CSVs go in `tools/wpd_*_raw.csv`, then processing scripts resample to 125 Hz using PCHIP interpolation (not CubicSpline — it overshoots on closely-spaced points). For multi-part extractions, use level alignment + crossfade at stitch points.
+- **WebPlotDigitizer workflow**: Waveforms can be digitized from printed/PDF sources using WPD v4 (https://automeris.io/WebPlotDigitizer/). Raw CSVs go in `tools/wpd_*_raw.csv` (WPD exports with NO header row), then processing scripts resample to 125 Hz using PCHIP interpolation (not CubicSpline — it overshoots on closely-spaced points).
+  - **X calibration**: calibrate in *grid squares*, then set `GRID_TO_SEC` in the processing script — 0.04 for small squares (25 mm/s paper), 0.2 for large. **Check the result against heart rate**: the PA re-trace was calibrated on large squares while the older chambers used small, and only HR made that visible (0.2 → 93 bpm, matching the rest of the slide; 0.04 → an impossible 465).
+  - **Y calibration**: the UCHealth slide has NO pressure scale, so mmHg cannot be read off it. Best available: click the zero-pressure baseline as the FIRST point (`ZERO_REF` in `process_pa_waveform.py` strips it and uses it as 0 mmHg), then pin systolic to a chosen value; diastolic then falls out of real geometry instead of being invented. Grab that reference point in *click order, before sorting by x* — a nearby trace point often sits a hair further left. The older chambers instead min-max stretch onto hardcoded ranges, which is outlier-sensitive: one stray click rescales the whole waveform.
+  - **Trim to whole beats** (cut at diastolic nadirs) so clips loop without a step, and to drop the low stray point a hand trace often starts with.
 
 ## Finding New PAC-Float Patients (wedge-anchored pipeline)
 A working pipeline sources new complete-float teaching cases (IVC/RA→RV→PA→wedge) from MIMIC-III.

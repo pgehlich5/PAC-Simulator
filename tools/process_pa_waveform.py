@@ -48,6 +48,19 @@ ZERO_REF = True
 MMHG_PER_UNIT = None
 SYSTOLIC_TARGET = 28
 
+# Visual flattening, applied AFTER calibration. 1.0 = leave as measured.
+# Pulls diastole up toward the systolic peak by this factor, so the trace reads
+# flatter while systolic stays matched to RV — the matched peak with a diastolic
+# step-up is the point the slide teaches, so flattening must not disturb it.
+#
+# This is a deliberate departure from the measured pressures: at 0.65 the trace
+# reads about a third of the RV excursion, which is how the two compare on the
+# source slide, versus about half when measured. This patient is a digitized
+# teaching illustration, so matching the slide was chosen over matching the
+# original patient's hemodynamics. Side effect: PA mean rises 19.8 -> 22.7 and
+# so sits further above the wedge mean (14.1) than physiology would have it.
+FLATTEN_K = 0.65
+
 # Trim the resampled clip to a whole number of beats, cut at diastolic nadirs,
 # so it loops without a visible step. Also drops any lead-in/lead-out fragment
 # — including a stray first click that isn't a real nadir (a hand trace often
@@ -126,6 +139,16 @@ else:
     y_norm = (y_raw - y_raw.min()) / (y_raw.max() - y_raw.min())
     p_scaled = y_norm * (PRESSURE_MAX - PRESSURE_MIN) + PRESSURE_MIN
     print(f"\nMin-max stretched onto {PRESSURE_MIN}-{PRESSURE_MAX} mmHg")
+
+# --- Visual flattening toward the systolic peak ---
+if FLATTEN_K != 1.0:
+    sys_level = p_scaled.max()
+    dia_before = p_scaled.min()
+    p_scaled = sys_level - (sys_level - p_scaled) * FLATTEN_K
+    print(f"Flattened by k={FLATTEN_K:g} about systolic {sys_level:.1f}: "
+          f"diastolic {dia_before:.1f} -> {p_scaled.min():.1f}, "
+          f"pulse {sys_level - dia_before:.1f} -> "
+          f"{sys_level - p_scaled.min():.1f} mmHg")
 
 # --- Resample to 125 Hz using PCHIP (shape-preserving, no overshoot) ---
 t_uniform = np.arange(t_raw[0], t_raw[-1], 1 / SAMPLE_RATE)

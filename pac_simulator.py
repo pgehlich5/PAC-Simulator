@@ -2020,6 +2020,22 @@ def update_toggle_highlight(labels, active_mode):
             lbl.configure(fg=TOGGLE_INACTIVE_FG, bg=TOGGLE_INACTIVE_BG)
 
 
+def enforce_fullscreen(root, checks_left=30):
+    """Check once a second that the window really fills the screen; retry if not.
+
+    At boot the compositor (labwc) may still be starting and can drop a
+    fullscreen request, leaving a floating window. Toggling off then on sends a
+    fresh request even though Tk already believes it's fullscreen. The checks
+    stop after 30 s so this can never flicker during a teaching session.
+    """
+    if (root.winfo_width() < root.winfo_screenwidth()
+            or root.winfo_height() < root.winfo_screenheight()):
+        root.attributes('-fullscreen', False)
+        root.after(100, lambda: root.attributes('-fullscreen', True))
+    if checks_left > 1:
+        root.after(1000, lambda: enforce_fullscreen(root, checks_left - 1))
+
+
 # --- Main entry point --------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
@@ -2068,6 +2084,7 @@ def main():
         # ignore -fullscreen set before the first map, which is why it
         # sometimes booted as a floating 1280x800 window instead.
         root.after(250, lambda: root.attributes('-fullscreen', True))
+        root.after(1000, lambda: enforce_fullscreen(root))
     else:
         root.geometry("1280x800")
     root.bind("<Escape>", lambda e: root.destroy())

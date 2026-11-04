@@ -126,10 +126,19 @@ Step-by-step setup for a fresh Pi (repeat this for each build).
 
 ### 1. OS and dependencies
 
-- Flash **Raspberry Pi OS Bookworm (64-bit)** and boot to the desktop. Bookworm
-  uses **labwc** (Wayland) by default — keep it. X11 and Wayfire have known
-  issues with this panel (lost display rotation; inverted cursor over remote
-  sharing).
+- Flash **Raspberry Pi OS Bookworm (64-bit)**.
+- **Before first boot, enable the display** or the screen stays blank. With the
+  SD card in your PC, open the `bootfs` drive and add these lines to the end of
+  `config.txt`:
+  ```
+  dtoverlay=vc4-kms-v3d
+  dtoverlay=vc4-kms-dsi-waveshare-panel-v2,10_1_inch_a
+  ```
+  This is for DSI1; on DSI0, append `,dsi0` to the second line. The panel also
+  needs its 5V and GND cable connected to the Pi's GPIO header.
+- Boot to the desktop. Bookworm uses **labwc** (Wayland) by default — keep it.
+  X11 and Wayfire have known issues with this panel (lost display rotation;
+  inverted cursor over remote sharing).
 - Update and install Python dependencies:
   ```bash
   sudo apt update && sudo apt full-upgrade -y

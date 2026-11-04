@@ -90,7 +90,7 @@ archive/                  # Older/deprecated files
 - Rotary encoder on GPIO17/18 for catheter advancement
 - Reset button on GPIO2
 - Window manager: labwc (Wayland) — NOT X11 or Wayfire
-- Fullscreen: labwc/Wayland ignores `-fullscreen` set before the window's first map, so the app must re-assert it after map (`root.after(...)` in `main()`); the app boots fullscreen by default, `--windowed` gives a 1280x800 dev window
+- Fullscreen: labwc/Wayland ignores `-fullscreen` set before the window's first map, so the app must re-assert it after map (`root.after(...)` in `main()`). During autostart the still-loading desktop can drop the request too, so `enforce_fullscreen()` checks the real window size once a second for 30 s and retries. The app boots fullscreen by default, `--windowed` gives a 1280x800 dev window
 - Display + touch rotation: set via **Screen Configuration → Screen → DSI Orientation → Apply** (Bookworm syncs the display AND touch together — this is the supported method). Touch mode: **Screen Configuration → Touchscreen → Mouse Emulation**. **Gotcha:** Appearance Settings → Defaults → "Set Defaults" desyncs touch from the display (taps land mirrored/across-screen) — redo the orientation step to fix. CLI fallback (can conflict with the compositor's touch mapping, so prefer the GUI): a `LIBINPUT_CALIBRATION_MATRIX` udev rule in `/etc/udev/rules.d/` — Waveshare matrices 90=`0 -1 1 1 0 0`, 180=`-1 0 1 0 -1 1`, 270=`0 1 0 -1 0 1`.
 - All UI must be touch-friendly (no keyboard on Pi)
 - Full per-build setup is in README.md ("Raspberry Pi configuration") and `pi_setup/README.md` (autostart, Start/Update desktop icons, crash-recovery watchdog)

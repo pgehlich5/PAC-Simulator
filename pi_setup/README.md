@@ -51,8 +51,7 @@ The simulator is built for others to use, so it recovers from crashes two ways:
 
 > Note: a *frozen* (not crashed) app stays full-screen and covers the desktop,
 > so the Start icon may be unreachable in that case. Crashes — where the
-> window closes — are handled by both mechanisms. To also recover frozen
-> sessions without a keyboard, wire the GPIO reset button to `start_pac.sh`.
+> window closes — are handled by both mechanisms.
 
 ## Updating
 

@@ -87,8 +87,8 @@ archive/                  # Older/deprecated files
 
 ## Hardware (Pi Deployment)
 - Raspberry Pi 5 with Waveshare 10.1" DSI touchscreen (landscape)
-- Rotary encoder on GPIO17/18 for catheter advancement
-- Reset button on GPIO2
+- OS: first unit on Bookworm, second unit on Trixie. Both pull from `main`, so a push reaches both at their next boot, and thresholds in `pac_simulator.py` are shared
+- LPD3806-600BM-G5-24C rotary encoder on GPIO17/18 for catheter advancement, with external 10 kΩ pull-ups to 3.3V (deliberately not the internal pull-ups); wiring table in README.md
 - Window manager: labwc (Wayland) — NOT X11 or Wayfire
 - Fullscreen: labwc/Wayland ignores `-fullscreen` set before the window's first map, so the app must re-assert it after map (`root.after(...)` in `main()`). During autostart the still-loading desktop can drop the request too, so `enforce_fullscreen()` checks the real window size once a second for 30 s and retries. The app boots fullscreen by default, `--windowed` gives a 1280x800 dev window
 - Display + touch rotation: set via **Screen Configuration → Screen → DSI Orientation → Apply** (Bookworm syncs the display AND touch together — this is the supported method). Touch mode: **Screen Configuration → Touchscreen → Mouse Emulation**. **Gotcha:** Appearance Settings → Defaults → "Set Defaults" desyncs touch from the display (taps land mirrored/across-screen) — redo the orientation step to fix. CLI fallback (can conflict with the compositor's touch mapping, so prefer the GUI): a `LIBINPUT_CALIBRATION_MATRIX` udev rule in `/etc/udev/rules.d/` — Waveshare matrices 90=`0 -1 1 1 0 0`, 180=`-1 0 1 0 -1 1`, 270=`0 1 0 -1 0 1`.
@@ -147,9 +147,8 @@ cd tools && python -m streamlit run waveform_viewer.py
 # Pi: pull updates and run (from wherever you cloned the repo)
 cd ~/PAC-Simulator && git pull && python pac_simulator.py
 
-# Pi: install dependencies (note --break-system-packages for Bookworm)
-pip install --break-system-packages -r requirements.txt
-pip install --break-system-packages "numpy<2"  # must stay on numpy 1.x for matplotlib
+# Pi: install dependencies (apt only; requirements.txt is for the PC tools)
+sudo apt install -y python3-numpy python3-tk python3-gpiozero
 ```
 
 ## Notable Database Findings

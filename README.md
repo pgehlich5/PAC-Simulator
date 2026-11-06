@@ -28,6 +28,9 @@ pip install -r requirements.txt
 python pac_simulator.py
 ```
 
+This is for a PC. On a Raspberry Pi, follow
+[Raspberry Pi configuration](#raspberry-pi-configuration) instead.
+
 Other launches:
 
 ```bash
@@ -103,8 +106,8 @@ To change a waveform, change a landmark and re-run.
 ## Hardware (Raspberry Pi setup)
 
 - Raspberry Pi 5 with Waveshare 10.1" DSI touchscreen (landscape orientation)
-- Rotary encoder on GPIO17/18 for catheter advancement
-- Reset button on GPIO2
+- LPD3806-600BM-G5-24C rotary encoder on GPIO17/18 for catheter advancement
+  (see [Wiring](#4-wiring))
 - Window manager: labwc (Wayland) — X11 and Wayfire have known issues
 - UI is touch-friendly throughout — no keyboard required during teaching
 
@@ -126,7 +129,9 @@ Step-by-step setup for a fresh Pi (repeat this for each build).
 
 ### 1. OS and dependencies
 
-- Flash **Raspberry Pi OS Bookworm (64-bit)**.
+- Flash **Raspberry Pi OS (64-bit) with desktop** to a **32 GB or larger** card.
+  An 8 GB card ran out of space during setup. The newest build runs **Trixie**;
+  the first build runs **Bookworm**, and both work.
 - **Before first boot, enable the display** or the screen stays blank. With the
   SD card in your PC, open the `bootfs` drive and add these lines to the end of
   `config.txt`:
@@ -136,23 +141,27 @@ Step-by-step setup for a fresh Pi (repeat this for each build).
   ```
   This is for DSI1; on DSI0, append `,dsi0` to the second line. The panel also
   needs its 5V and GND cable connected to the Pi's GPIO header.
-- Boot to the desktop. Bookworm uses **labwc** (Wayland) by default — keep it.
+- Boot to the desktop. Keep the default **labwc** (Wayland) session.
   X11 and Wayfire have known issues with this panel (lost display rotation;
   inverted cursor over remote sharing).
-- Update and install Python dependencies:
+- Update the system, install the three packages the simulator needs, and clone
+  the repo:
   ```bash
   sudo apt update && sudo apt full-upgrade -y
+  sudo apt install -y python3-numpy python3-tk python3-gpiozero
   git clone https://github.com/pgehlich5/PAC-Simulator.git ~/PAC-Simulator
-  cd ~/PAC-Simulator
-  pip install --break-system-packages -r requirements.txt
-  pip install --break-system-packages "numpy<2"   # must stay on numpy 1.x for matplotlib
   ```
+  Don't install `requirements.txt` on a Pi. It's for the PC waveform tools and
+  the optional NeuroKit2 ECG used by the hidden Simulated mode, and it isn't
+  needed for Real Patient mode. These steps are tested on Trixie; the Bookworm
+  build was set up earlier with pip.
 
 ### 2. Display + touch rotation (the important part)
 
 The Waveshare 10.1" is a native-portrait panel used in landscape, so it must be
-rotated — and **the touch input has to rotate with it.** On Bookworm, do this
-through the GUI, which syncs display *and* touch together:
+rotated — and **the touch input has to rotate with it.** Do this through the
+GUI, which syncs display *and* touch together. The steps are the same on
+Bookworm and Trixie:
 
 1. **Menu → Preferences → Screen Configuration**
 2. **Screen** menu → the DSI output (e.g. **DSI-2**) → **Orientation** → choose
@@ -177,7 +186,7 @@ SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MAT
 ```
 
 Waveshare's matrices: `90° = "0 -1 1 1 0 0"`, `180° = "-1 0 1 0 -1 1"`,
-`270° = "0 1 0 -1 0 1"`. Prefer the GUI method above — on Bookworm a manual
+`270° = "0 1 0 -1 0 1"`. Prefer the GUI method above — a manual
 matrix can conflict with the compositor's own touch mapping. See the
 [10.1-DSI-TOUCH-A wiki](https://www.waveshare.com/wiki/10.1-DSI-TOUCH-A).
 
@@ -187,6 +196,58 @@ See **[`pi_setup/README.md`](pi_setup/README.md)** — it covers launching the
 simulator automatically at boot, the touch-friendly **Start** and **Update**
 desktop icons, and the self-healing watchdog that relaunches the app if it
 crashes.
+
+### 4. Wiring
+
+This layout uses five Wago 221 lever connectors and two 10 kΩ resistors. The
+encoder has open-collector outputs, so each signal line gets an external pull-up
+to 3.3V. Wire with the Pi powered off.
+
+**GPIO header.** Pins in brackets are used. The odd-numbered row is the one
+farther from the board edge, and pin 1 is at the SD-card end:
+
+```
+                    USB-port end                 SD-card end
+inner row (odd)    ...  13  [11] [ 9]   7    5    3  [ 1]
+outer row (even)   ...  14  [12]  10    8  [ 6] [ 4] [ 2]
+```
+
+| Pin | Signal | Connects to             |
+|-----|--------|-------------------------|
+| 1   | 3.3V   | 3.3V Wago               |
+| 2   | 5V     | 5V Wago                 |
+| 4   | 5V     | Screen 5V (no Wago)     |
+| 6   | GND    | Screen GND (no Wago)    |
+| 9   | GND    | GND Wago                |
+| 11  | GPIO17 | Signal A Wago           |
+| 12  | GPIO18 | Signal B Wago           |
+
+**Wagos:**
+
+| Wago     | Size  | Connections                                |
+|----------|-------|--------------------------------------------|
+| 5V       | 2-way | Pin 2, encoder red                         |
+| GND      | 2-way | Pin 9, encoder black                       |
+| 3.3V     | 3-way | Pin 1, resistor 1, resistor 2              |
+| Signal A | 3-way | Pin 11, encoder white, other end of resistor 1 |
+| Signal B | 3-way | Pin 12, encoder green, other end of resistor 2 |
+
+Resistors have no polarity. Encoder wires can be thin, so check them against the
+Wago's rated wire range and give each one a gentle tug after closing the lever.
+
+**Check before relying on it:**
+
+1. With the encoder's red and black wires connected but the signal wires not yet
+   landed on the GPIO pins, confirm the 5V and 3.3V Wagos read the right voltages.
+2. Confirm pins 11 and 12 only ever read about 3.3V or near 0V. **5V on a GPIO
+   pin can damage the Pi.**
+3. Turn the encoder while running this command. Both pins should flip between
+   high and low:
+   ```bash
+   pinctrl get 17,18
+   ```
+4. If advancing the catheter moves the chambers backward, swap the encoder's
+   white and green wires.
 
 ## Adding your own patient
 

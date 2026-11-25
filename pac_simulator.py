@@ -234,30 +234,6 @@ def load_patient_info(patient=None):
         return {}
 
 
-def load_clinical_vignette(patient=None):
-    """Load the clinical scenario vignette text for a patient.
-
-    Looks first in clinical_data/clinical_vignette.txt (used in credentialed
-    setups where vignettes are derived from MIMIC-III clinical data and
-    git-ignored), then falls back to vignette.txt at the patient root
-    (fictional teaching vignettes shipped with the public repo).
-    """
-    patient = patient or DEFAULT_PATIENT
-    base = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "waveform_data", patient)
-    candidate_paths = [
-        os.path.join(base, "clinical_data", "clinical_vignette.txt"),
-        os.path.join(base, "vignette.txt"),
-    ]
-    for path in candidate_paths:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            continue
-    return None
-
-
 def load_scenario(scenario_name="normal"):
     """Load a hemodynamic scenario from scenarios/{name}.json.
 
@@ -1386,23 +1362,6 @@ class PAC_Simulator_RealAdvancement:
         self.frame_main = tk.Frame(self.parent, bg="#000000")
         self.frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Clinical scenario overlay (hidden by default)
-        self.vignette_text = load_clinical_vignette(self.patient)
-        self.clinical_panel_visible = False
-        self._clinical_overlay = None
-
-        # "Patient History" button — top center, always visible
-        if self.vignette_text:
-            self._hx_btn = tk.Label(
-                self.parent, text=" Patient History ",
-                font=("Helvetica", 10, "bold"),
-                fg="#CCCCCC", bg="#333333",
-                padx=8, pady=4, cursor="hand2",
-            )
-            self._hx_btn.place(relx=0.5, y=68, anchor=tk.N)
-            self._hx_btn.bind("<Button-1>",
-                              lambda e: self._toggle_clinical_panel())
-
         self.canvases = {}
         self.readout_frames = {}
         READOUT_WIDTH = 180
@@ -1898,67 +1857,6 @@ class PAC_Simulator_RealAdvancement:
             pass
         return f"temp={temp_val} throttled={thr_val}{warn}"
 
-    # --- Clinical scenario panel ------------------------------------------------
-
-    def _toggle_clinical_panel(self):
-        """Toggle clinical scenario overlay on/off."""
-        if self.vignette_text is None:
-            return
-
-        self.clinical_panel_visible = not self.clinical_panel_visible
-
-        if not self.clinical_panel_visible:
-            # Hide overlay
-            if self._clinical_overlay:
-                self._clinical_overlay.place_forget()
-            return
-
-        # Build overlay if it doesn't exist yet
-        if self._clinical_overlay is None:
-            self._clinical_overlay = tk.Frame(
-                self.parent, bg=CLINICAL_BG,
-                highlightbackground=CLINICAL_BORDER, highlightthickness=2)
-
-            # Title bar
-            title_bar = tk.Frame(self._clinical_overlay, bg=CLINICAL_BORDER, height=32)
-            title_bar.pack(fill=tk.X, side=tk.TOP)
-            title_bar.pack_propagate(False)
-
-            tk.Label(
-                title_bar, text="CLINICAL SCENARIO",
-                font=("Helvetica", 10, "bold"),
-                fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
-            ).pack(side=tk.LEFT, padx=8, pady=4)
-
-            close_btn = tk.Label(
-                title_bar, text=" X ",
-                font=("Helvetica", 10, "bold"),
-                fg="#AAAAAA", bg=CLINICAL_BORDER, cursor="hand2",
-            )
-            close_btn.pack(side=tk.RIGHT, padx=4, pady=4)
-            close_btn.bind("<Button-1>", lambda e: self._toggle_clinical_panel())
-
-            # Separator
-            tk.Frame(
-                self._clinical_overlay, bg=CLINICAL_TITLE_FG, height=1
-            ).pack(fill=tk.X, padx=8, pady=(0, 8))
-
-            # Vignette text
-            txt = tk.Text(
-                self._clinical_overlay, wrap=tk.WORD,
-                font=("Helvetica", 11), fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
-                relief=tk.FLAT, borderwidth=0, highlightthickness=0,
-                padx=10, pady=4, cursor="arrow",
-            )
-            txt.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 10))
-            txt.insert(tk.END, self.vignette_text)
-            txt.configure(state=tk.DISABLED)
-
-        # Show overlay — top aligned with the Patient History button
-        self._clinical_overlay.place(
-            relx=0.5, y=68, anchor=tk.N,
-            width=CLINICAL_OVERLAY_W, height=CLINICAL_OVERLAY_H)
-
     def cleanup(self):
         self.running = False
 
@@ -1984,11 +1882,6 @@ def setup_keyboard_controls(app):
         app.root.bind("r", key_reset)
         app.root.bind("R", key_reset)
 
-    # Clinical panel toggle (works regardless of GPIO)
-    if hasattr(app, '_toggle_clinical_panel'):
-        app.root.bind("h", lambda e: app._toggle_clinical_panel())
-        app.root.bind("H", lambda e: app._toggle_clinical_panel())
-
 
 # --- Mode toggle bar ---------------------------------------------------------
 MODES = [
@@ -2013,13 +1906,11 @@ PT_ACTIVE_FG = "#00CCFF"
 PT_INACTIVE_BG = "#111111"
 PT_INACTIVE_FG = "#336677"
 
-# Clinical scenario panel constants
-CLINICAL_BG = "#0a0a0a"
-CLINICAL_BORDER = "#333333"
-CLINICAL_TITLE_FG = "#FFD84D"
-CLINICAL_TEXT_FG = "#CCCCCC"
-CLINICAL_OVERLAY_W = 420
-CLINICAL_OVERLAY_H = 300
+# Settings panel styling
+PANEL_BG = "#0a0a0a"
+PANEL_BORDER = "#333333"
+PANEL_TITLE_FG = "#FFD84D"
+PANEL_TEXT_FG = "#CCCCCC"
 
 
 def build_toggle_bar(root, active_mode, switch_callback):
@@ -2291,20 +2182,20 @@ def main():
             return
 
         # Child of root (not content_frame) so it survives a patient switch.
-        panel = tk.Frame(root, bg=CLINICAL_BG,
-                         highlightbackground=CLINICAL_BORDER,
+        panel = tk.Frame(root, bg=PANEL_BG,
+                         highlightbackground=PANEL_BORDER,
                          highlightthickness=2)
         settings_panel[0] = panel
 
-        title_bar = tk.Frame(panel, bg=CLINICAL_BORDER)
+        title_bar = tk.Frame(panel, bg=PANEL_BORDER)
         title_bar.pack(fill=tk.X)
         tk.Label(
             title_bar, text="SETTINGS", font=("Helvetica", 12, "bold"),
-            fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
+            fg=PANEL_TITLE_FG, bg=PANEL_BORDER,
         ).pack(side=tk.LEFT, padx=12, pady=6)
         close_btn = tk.Label(
             title_bar, text="  X  ", font=("Helvetica", 14, "bold"),
-            fg="#AAAAAA", bg=CLINICAL_BORDER, padx=8, pady=6, cursor="hand2",
+            fg="#AAAAAA", bg=PANEL_BORDER, padx=8, pady=6, cursor="hand2",
         )
         close_btn.pack(side=tk.RIGHT)
         close_btn.bind("<Button-1>", lambda e: toggle_settings_panel())
@@ -2313,11 +2204,11 @@ def main():
         for folder, (key, text) in OPTIONAL_PATIENTS.items():
             if folder not in folders:
                 continue
-            row = tk.Frame(panel, bg=CLINICAL_BG)
+            row = tk.Frame(panel, bg=PANEL_BG)
             row.pack(fill=tk.X, padx=16, pady=16)
             tk.Label(
                 row, text=text, font=("Helvetica", 14),
-                fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
+                fg=PANEL_TEXT_FG, bg=PANEL_BG,
             ).pack(side=tk.LEFT, padx=(0, 40))
             switch = tk.Label(
                 row, font=("Helvetica", 14, "bold"), width=5, pady=8,

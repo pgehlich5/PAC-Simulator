@@ -44,7 +44,6 @@ Keyboard controls when no rotary encoder is connected:
 - `+` / `=` — advance the catheter (10 encoder steps)
 - `-` — retract the catheter
 - `r` — reset to SVC
-- `h` — toggle the Patient History panel
 - `Esc` — quit
 
 ## Patients included
@@ -66,7 +65,8 @@ alongside the lecture. To show it, tap **SETTINGS** (bottom right) and switch
 `local_settings.json`, which git ignores, so it survives reboots and updates.
 While it's on, the simulator opens on the PowerPoint example.
 
-Clinical vignettes shipped publicly with this repository are **fictional
+The `vignette.txt` files are kept for reference only; the simulator doesn't
+display them. Those shipped publicly with this repository are **fictional
 teaching cases** written for educational use. They are not derived from
 individual patient records.
 
@@ -86,9 +86,6 @@ Values: SVC mean 3 · RA mean 4 (a > v) · RV 25/5 · PA 25/10, mean 15 · PCWP
 mean 10 (v > a, waves delayed). RV and PA share a systolic pressure on purpose:
 the diastolic step-up and the appearance of a dicrotic notch are what tell you
 the tip crossed the pulmonic valve.
-
-She ships no `vignette.txt` on purpose — she is a reference waveform rather than a
-case with a history, so the "Patient History" button is hidden for her.
 
 Because every clip is a whole number of identical, phase-aligned beats, she sets
 `"continuous_phase": true` in her `patient.json`. The simulator then carries the
@@ -272,7 +269,6 @@ waveform_data/my_patient/
   pap_pa/PAP.csv + metadata.json
   pap_wedge/PAP.csv + metadata.json
   background/II.csv, ABP.csv, metadata.json   # optional
-  vignette.txt                  # optional teaching vignette
 ```
 
 See `tools/extract_p003914.py` for an end-to-end extraction script that pulls
@@ -282,20 +278,19 @@ clips from MIMIC-III via the `wfdb` library.
 
 If you have credentialed access to the
 [MIMIC-III Clinical Database](https://physionet.org/content/mimiciii/1.4/),
-you can attach richer clinical context to any patient by creating a
+you can keep richer clinical context alongside any patient in a
 `clinical_data/` subfolder:
 
 ```
 waveform_data/<patient>/clinical_data/
-  clinical_vignette.txt         # takes precedence over public vignette.txt
+  clinical_vignette.txt
   hospital_course.json
   echo_report.json
   past_medical_history.json
   ... etc.
 ```
 
-The simulator prefers `clinical_data/clinical_vignette.txt` over the public
-`vignette.txt` when both are present. The `clinical_data/` path is in
+The simulator doesn't read these files. The `clinical_data/` path is in
 `.gitignore` and must remain so — content there is governed by the PhysioNet
 Credentialed Health Data Use Agreement and cannot be redistributed.
 

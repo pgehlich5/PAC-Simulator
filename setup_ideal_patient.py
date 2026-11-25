@@ -257,10 +257,6 @@ def build(out_root):
             "continuous_phase": True,
         }, f, indent=2)
 
-    # No vignette.txt on purpose. She is a reference waveform, not a case with
-    # a history, and the simulator hides the "Patient History" button entirely
-    # when a patient has no vignette.
-
     print(f"Built ideal patient in {out_root}")
     print(f"  {SAMPLES_PER_BEAT} samples/beat x {BEATS} beats = {N} samples "
           f"({N / FS:.0f} s) at {FS} Hz")

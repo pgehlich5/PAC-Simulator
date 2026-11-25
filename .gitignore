@@ -42,3 +42,7 @@ tools/wpd_all_chambers.png
 tools/wpd_insertion_sweep.png
 tools/wpd_pa_orient_test.png
 tools/wpd_rv_scales.png
+
+# Per-device settings saved by the app (each simulator keeps its own)
+local_settings.json
+local_settings.json.tmp

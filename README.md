@@ -53,12 +53,18 @@ Listed in on-screen button order:
 
 | Patient    | Waveforms                                      | Notes                                                          |
 |------------|------------------------------------------------|---------------------------------------------------------------|
-| PowerPoint | PAP only (no ECG/ABP)                          | Digitized from a teaching slide via WebPlotDigitizer          |
+| PowerPoint | PAP only (no ECG/ABP)                          | Digitized from a teaching slide via WebPlotDigitizer. Hidden until turned on in Settings |
 | Perfect Patty | ECG + ABP + per-chamber PAP (per-chamber bg) | **Synthetic** textbook reference case — start here (see below); the patient the app opens on |
 | Esther     | ECG + ABP + per-chamber PAP                    | Complete PAC float (SVC→RA→RV→PA→wedge); first algorithm-found case |
 | Herbert    | ECG + ABP + per-chamber PAP                    | Teaching case: septic shock                                   |
 | Horace     | ECG + ABP + per-chamber PAP (per-chamber bg)   | Complete float with severe pulmonary hypertension; chamber-locked ectopy |
 | Grover     | ECG + ABP + per-chamber PAP + RV ectopy        | Teaching case: cardiogenic shock + severe AS                  |
+
+The PowerPoint example is hidden by default because it only makes sense
+alongside the lecture. To show it, tap **SETTINGS** (bottom right) and switch
+**Show PowerPoint example** on. Each simulator remembers its own choice in
+`local_settings.json`, which git ignores, so it survives reboots and updates.
+While it's on, the simulator opens on the PowerPoint example.
 
 Clinical vignettes shipped publicly with this repository are **fictional
 teaching cases** written for educational use. They are not derived from

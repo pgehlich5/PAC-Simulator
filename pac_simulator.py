@@ -143,6 +143,48 @@ PATIENT_ORDER = [
 ]
 
 
+# Patients hidden unless the matching on-screen setting is turned on. They only
+# make sense alongside other teaching material, so they confuse independent
+# learners. Maps patient folder -> (setting key, label in the Settings panel).
+OPTIONAL_PATIENTS = {
+    "powerpoint": ("show_powerpoint", "Show PowerPoint example"),
+}
+
+# Per-device settings. Git-ignored, so each simulator keeps its own choices
+# across reboots and updates.
+SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "local_settings.json")
+
+
+def load_settings():
+    """Read this device's saved settings; {} if missing or unreadable."""
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def save_settings(settings):
+    """Save settings. Returns False (rather than crashing) if it can't.
+
+    Writes a temp file and swaps it in, so cutting power mid-save (these get
+    unplugged) can't leave a half-written file.
+    """
+    tmp = SETTINGS_PATH + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, SETTINGS_PATH)
+    except OSError as e:
+        print(f"WARNING: could not save settings: {e}")
+        return False
+    return True
+
+
 def discover_patients():
     """Scan waveform_data/ for available patient folders.
 
@@ -953,9 +995,10 @@ class PAC_Simulator_RealAdvancement:
     """
 
     def __init__(self, root, parent=None, data_source="real", scenario=None,
-                 patient=None, profile=False):
+                 patient=None, profile=False, on_settings=None):
         self.root = root
         self.parent = parent or root
+        self._on_settings = on_settings  # opens the Settings panel, if any
         self.data_source = data_source
         self.patient = patient or DEFAULT_PATIENT
         self._scenario = None  # set by _init_simulated_loaders if applicable
@@ -1271,6 +1314,16 @@ class PAC_Simulator_RealAdvancement:
             font=("Helvetica", 9), fg="#888888", bg="#1a1a1a"
         )
         self.lbl_mode.pack(side=tk.LEFT, padx=15, pady=6)
+
+        if self._on_settings is not None:
+            tk.Button(
+                self.frame_bottom, text="SETTINGS",
+                font=("Helvetica", 10, "bold"), bg="#444444", fg="#FFFFFF",
+                activebackground="#444444", activeforeground="#FFFFFF",
+                relief=tk.FLAT, overrelief=tk.FLAT,
+                borderwidth=0, highlightthickness=0,
+                command=self._on_settings, padx=15, pady=3
+            ).pack(side=tk.RIGHT, padx=15, pady=6)
 
         # HR adjustment controls (simulated mode only)
         self._hr_label = None
@@ -2098,8 +2151,23 @@ def main():
         nick = p.get("nickname") or p["folder"]
         print(f"  Found patient: {nick} ({p['folder']})")
 
+    settings = load_settings()
+
+    def _is_visible(idx):
+        """False for an optional patient whose setting is off."""
+        folder = available_patients[idx]["folder"]
+        if folder == args.patient:
+            return True  # explicitly asked for on the command line
+        if folder not in OPTIONAL_PATIENTS:
+            return True
+        return settings.get(OPTIONAL_PATIENTS[folder][0]) is True
+
+    def _first_visible():
+        return next((i for i in range(len(available_patients))
+                     if _is_visible(i)), 0)
+
     # Select starting patient
-    current_patient_idx = [0]
+    current_patient_idx = [_first_visible()]
     if args.patient:
         for i, p in enumerate(available_patients):
             if p["folder"] == args.patient:
@@ -2147,7 +2215,8 @@ def main():
             try:
                 app = PAC_Simulator_RealAdvancement(
                     root, parent=content_frame, data_source="real",
-                    patient=patient_folder, profile=args.profile
+                    patient=patient_folder, profile=args.profile,
+                    on_settings=toggle_settings_panel
                 )
             except ValueError as e:
                 print(f"ERROR: {e}")
@@ -2159,7 +2228,7 @@ def main():
                 app = PAC_Simulator_RealAdvancement(
                     root, parent=content_frame,
                     data_source="simulated", scenario=scenario,
-                    profile=args.profile
+                    profile=args.profile, on_settings=toggle_settings_panel
                 )
             except Exception as e:
                 print(f"ERROR loading simulated mode: {e}")
@@ -2199,16 +2268,88 @@ def main():
                 lbl.configure(fg=PT_INACTIVE_FG, bg=PT_INACTIVE_BG)
 
     def _show_patient_tabs(visible):
-        """Show or hide patient tabs based on current mode."""
+        """Show or hide patient tabs based on current mode and settings."""
+        # Unpack everything first so re-shown tabs return to their own position.
+        patient_sep.pack_forget()
         for lbl in patient_tabs.values():
-            if visible:
+            lbl.pack_forget()
+        if not visible:
+            return
+        patient_sep.pack(side=tk.RIGHT, padx=(4, 0))
+        for i, lbl in patient_tabs.items():
+            if _is_visible(i):
                 lbl.pack(side=tk.RIGHT, padx=(2, 0))
+
+    # --- Settings panel ---
+    settings_panel = [None]
+
+    def toggle_settings_panel():
+        """Open or close the Settings panel."""
+        if settings_panel[0] is not None:
+            settings_panel[0].destroy()
+            settings_panel[0] = None
+            return
+
+        # Child of root (not content_frame) so it survives a patient switch.
+        panel = tk.Frame(root, bg=CLINICAL_BG,
+                         highlightbackground=CLINICAL_BORDER,
+                         highlightthickness=2)
+        settings_panel[0] = panel
+
+        title_bar = tk.Frame(panel, bg=CLINICAL_BORDER)
+        title_bar.pack(fill=tk.X)
+        tk.Label(
+            title_bar, text="SETTINGS", font=("Helvetica", 12, "bold"),
+            fg=CLINICAL_TITLE_FG, bg=CLINICAL_BORDER,
+        ).pack(side=tk.LEFT, padx=12, pady=6)
+        close_btn = tk.Label(
+            title_bar, text="  X  ", font=("Helvetica", 14, "bold"),
+            fg="#AAAAAA", bg=CLINICAL_BORDER, padx=8, pady=6, cursor="hand2",
+        )
+        close_btn.pack(side=tk.RIGHT)
+        close_btn.bind("<Button-1>", lambda e: toggle_settings_panel())
+
+        folders = {p["folder"] for p in available_patients}
+        for folder, (key, text) in OPTIONAL_PATIENTS.items():
+            if folder not in folders:
+                continue
+            row = tk.Frame(panel, bg=CLINICAL_BG)
+            row.pack(fill=tk.X, padx=16, pady=16)
+            tk.Label(
+                row, text=text, font=("Helvetica", 14),
+                fg=CLINICAL_TEXT_FG, bg=CLINICAL_BG,
+            ).pack(side=tk.LEFT, padx=(0, 40))
+            switch = tk.Label(
+                row, font=("Helvetica", 14, "bold"), width=5, pady=8,
+                cursor="hand2",
+            )
+            switch.pack(side=tk.RIGHT)
+            _style_switch(switch, settings.get(key) is True)
+            switch.bind("<Button-1>",
+                        lambda e, k=key, s=switch: _flip_setting(k, s))
+
+        panel.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        panel.lift()
+
+    def _style_switch(switch, on):
+        switch.configure(text="ON" if on else "OFF",
+                         fg=PT_ACTIVE_FG if on else "#AAAAAA",
+                         bg=PT_ACTIVE_BG if on else "#333333")
+
+    def _flip_setting(key, switch):
+        """Turn a setting on/off, save it, and apply it right away."""
+        settings[key] = settings.get(key) is not True
+        save_settings(settings)
+        _style_switch(switch, settings[key])
+        in_real_mode = current_mode[0] == "real-advancement"
+        if not _is_visible(current_patient_idx[0]):
+            # The patient on screen was just hidden; move to one that isn't.
+            if in_real_mode:
+                select_patient(_first_visible())
             else:
-                lbl.pack_forget()
-        if visible:
-            patient_sep.pack(side=tk.RIGHT, padx=(4, 0))
-        else:
-            patient_sep.pack_forget()
+                current_patient_idx[0] = _first_visible()
+                _update_patient_tabs()
+        _show_patient_tabs(in_real_mode)
 
     # Default mode
     start_mode = args.mode or "real-advancement"

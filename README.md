@@ -46,6 +46,17 @@ Keyboard controls when no rotary encoder is connected:
 - `r` — reset to SVC
 - `Esc` — quit
 
+## Tip sheets
+
+One-page handouts for learners, ready to print:
+
+- [How to use the simulator](docs/tip-sheets/tip-sheet-2-using-the-simulator.pdf)
+  — starting it up, floating the catheter, and what to notice in each patient case
+- [Reading the waveforms](docs/tip-sheets/tip-sheet-1-reading-waveforms.pdf)
+  — what each chamber looks like and the RV → PA diastolic step-up
+
+The HTML versions in the same folder are the source for the PDFs.
+
 ## Patients included
 
 Listed in on-screen button order:

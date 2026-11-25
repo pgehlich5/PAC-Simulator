@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PAC Tip Sheet 2 — How to Use the Simulator</title>
+<style>
+  :root {
+    --font: "Avenir Next LT Pro", "Avenir Next", Arial, "Helvetica Neue", sans-serif;
+    --red: #A6093D;
+    --summit-blue: #3B5470;
+    --soft-white: #EBEBE6;
+    --ink: #2B3942;
+    --ink-soft: #425563;
+    --muted: #768692;
+    --line: #D6DBDE;
+    --line-soft: #E7EBED;
+    --teal: #A6093D;
+    --teal-deep: #8A0733;
+    --teal-tint: #FAEDF1;
+    --teal-tint2: #EBCBD6;
+    --paper: #ffffff;
+    --warn-tint: #F1EFE7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--soft-white);
+    font-family: var(--font);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 56px;
+  }
+  .sheet {
+    background: var(--paper);
+    width: 8.5in;
+    min-height: 11in;
+    padding: 0.3in 0.6in 0.12in;
+    box-shadow: 0 2px 24px rgba(0,0,0,0.14);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.012em; margin: 5px 0 0; line-height: 1.04; }
+  .lede { font-size: 13px; color: var(--ink-soft); margin: 7px 0 0; line-height: 1.4; max-width: 6.4in; }
+  .sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 6px;
+  }
+  .steps { margin-top: 14px; display: flex; flex-direction: column; gap: 0; }
+  .step {
+    display: grid;
+    grid-template-columns: 0.52in 1fr;
+    gap: 16px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: start;
+  }
+  .step:first-child { border-top: 1px solid var(--line); }
+  .step .n { font-family: var(--font); font-size: 30px; font-weight: 600; color: var(--teal); line-height: 0.9; }
+  .step h3 { margin: 2px 0 4px; font-size: 15px; font-weight: 600; line-height: 1.15; }
+  .step p { margin: 0; font-size: 12.5px; line-height: 1.42; color: var(--ink-soft); }
+  .step p b { color: var(--ink); font-weight: 600; }
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0 12px;
+  }
+  .section-title h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+  .section-title .sub { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+  .section-title .rule { flex: 1; height: 1px; background: var(--line); }
+  .patients { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pcard {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 1.05in;
+  }
+  .pcard .phead { display: flex; align-items: center; gap: 10px; }
+  .pcard .pnum {
+    font-family: var(--font); font-size: 11px; font-weight: 600; color: var(--teal-deep);
+    border: 1.5px solid var(--teal); border-radius: 5px; padding: 2px 7px; flex-shrink: 0;
+  }
+  .pcard .pname { font-size: 14.5px; font-weight: 600; line-height: 1.1; }
+  .pcard .pdesc { margin-top: 9px; font-size: 11.5px; line-height: 1.4; color: var(--ink-soft); }
+  .footer {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    min-height: calc(0.46in + 15px);
+    gap: 16px;
+  }
+  .footer .meta { text-align: right; font-size: 9.5px; color: var(--muted); line-height: 1.4; }
+
+  @page { size: letter portrait; margin: 0; }
+  @media print {
+    html, body { background: #fff; }
+    .stage { padding: 0; }
+    .sheet { box-shadow: none; width: 8.5in; height: 11in; min-height: 11in; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <section class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h1>How to Use the Simulator</h1>
+        <p class="lede">Get running in under a minute. Advance a real catheter through the 3D-printed heart and watch the bedside monitor change as the tip floats through each chamber.</p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div>
+          <h3>Power on the simulator by plugging it in</h3>
+          <p>The Philips IntelliVue–style display comes up showing <b>ECG</b> and <b>arterial pressure</b> running continuously. Let it settle into a steady rhythm.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div>
+          <h3>The simulator software should start automatically</h3>
+          <p>If not, you can tap "<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="20" height="20" style="vertical-align:middle;display:inline-block;margin:0 2px;"><circle cx="18" cy="18" r="17" fill="#3aaa35" stroke="#2a8a26" stroke-width="2"/><polygon points="14,11 27,18 14,25" fill="white"/></svg>" to start the software</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div>
+          <h3>Feed the catheter through the rollers and into the heart</h3>
+          <p>The simulator knows how far the catheter has traveled through the heart by how many times the wheel has rotated</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <div>
+          <h3>Reset between floats</h3>
+          <p>Pull the catheter back to the start, then tap RESET TO SVC.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>Patient Cases</h2>
+      <span class="sub">Every patient except Perfect Patty uses real ICU patient waveforms.</span>
+    </div>
+
+    <div class="patients">
+      <div class="pcard">
+        <div class="phead">
+          <span class="pnum">1</span>
+          <span class="pname">Perfect Patty</span>
+        </div>
+        <p class="pdesc">Patty is not a real patient but an example of the textbook waveforms that you won't actually see very often.<br><br></p>
+      </div>
+      <div class="pcard">
+        <div class="phead">
+          <span class="pnum">2</span>
+          <span class="pname">Esther</span>
+        </div>
+        <p class="pdesc">Esther has some ectopy throughout the tracing and very elevated PA pressures. Also notice the respiratory variation in her wedge tracing</p>
+      </div>
+      <div class="pcard">
+        <div class="phead">
+          <span class="pnum">3</span>
+          <span class="pname">Herbert</span>
+        </div>
+        <p class="pdesc">Herbert has the cleanest CVP waveform with occasionally identifiable a, c, and v waves</p>
+      </div>
+      <div class="pcard">
+        <div class="phead">
+          <span class="pnum">4</span>
+          <span class="pname">Horace</span>
+        </div>
+        <p class="pdesc">Horace has the highest Pulmonary artery pressures of all the patients. He also demonstrates the importance of adjusting the scale on the monitor to see the whole waveform.</p>
+      </div>
+      <div class="pcard">
+        <div class="phead">
+          <span class="pnum">5</span>
+          <span class="pname">Grover</span>
+        </div>
+        <p class="pdesc">Grover's RV did not like the catheter and shows lots of ectopy when it's in there. He demonstrates pulmonary hypertension with PAP around 55/20</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="meta">November 24, 2026</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

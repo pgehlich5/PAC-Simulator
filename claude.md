@@ -54,6 +54,9 @@ tools/                    # Supporting scripts
   wpd_*_raw.csv           # Raw WebPlotDigitizer extractions
   wpd_*_resampled.csv     # Resampled 125 Hz waveforms ready for simulator
   pap_records.json        # Catalog of all MIMIC-III segments with PAP signals
+docs/tip-sheets/          # Learner handouts (PDF + HTML source). Public, so NO UCHealth logo.
+                          #   Master copies (with logo) are in the private "PAC Simulator Tip
+                          #   Sheets" Claude artifact; edit there, then re-export logo-free.
 archive/                  # Older/deprecated files
 ```
 

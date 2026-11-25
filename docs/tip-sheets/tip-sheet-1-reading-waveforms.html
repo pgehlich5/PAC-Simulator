@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PAC Tip Sheet 1 — Reading the Waveforms</title>
+<style>
+  :root {
+    --font: "Avenir Next LT Pro", "Avenir Next", Arial, "Helvetica Neue", sans-serif;
+    --red: #A6093D;
+    --summit-blue: #3B5470;
+    --shadow-gray: #425563;
+    --granite-gray: #768692;
+    --graphite: #58595B;
+    --soft-white: #EBEBE6;
+    --ink: #2B3942;
+    --ink-soft: #425563;
+    --muted: #768692;
+    --line: #D6DBDE;
+    --line-soft: #E7EBED;
+    --teal: #A6093D;
+    --teal-deep: #8A0733;
+    --teal-tint: #FAEDF1;
+    --teal-tint2: #EBCBD6;
+    --blue: #3B5470;
+    --paper: #ffffff;
+    --warn-tint: #F1EFE7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--soft-white);
+    font-family: var(--font);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 56px;
+  }
+  .sheet {
+    background: var(--paper);
+    width: 8.5in;
+    min-height: 11in;
+    padding: 0.3in 0.6in 0.12in;
+    box-shadow: 0 2px 24px rgba(0,0,0,0.14);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    margin: 5px 0 0;
+    line-height: 1.04;
+  }
+  .lede {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 7px 0 0;
+    line-height: 1.4;
+    max-width: 6.4in;
+  }
+  .mono { font-family: var(--font); }
+  .sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 6px;
+  }
+  .path {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 6px 0 0;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .path-node {
+    flex: 1;
+    padding: 8px 6px;
+    text-align: center;
+    border-right: 1px solid var(--line-soft);
+  }
+  .path-node:last-child { border-right: none; }
+  .path-node .abbr { font-family: var(--font); font-weight: 600; font-size: 14px; color: var(--ink); }
+  .path-node .full { font-size: 9.5px; color: var(--muted); display: block; margin-top: 2px; }
+  .path-node.wedge { background: transparent; }
+  .chambers {
+    display: flex;
+    flex-direction: column;
+    margin-top: 0;
+    border-top: 1px solid var(--line);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1.05fr 1.4fr;
+    gap: 18px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: center;
+  }
+  .row-left { min-width: 0; }
+  .chamber-tag { display: flex; align-items: baseline; gap: 9px; }
+  .badge {
+    font-family: var(--font);
+    font-weight: 600;
+    font-size: 13px;
+    color: #fff;
+    background: var(--ink);
+    border-radius: 5px;
+    padding: 3px 8px;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+  .row.accent .badge { background: var(--teal); }
+  .chamber-name { font-size: 14px; font-weight: 600; line-height: 1.1; }
+  .chamber-name small { display: block; font-weight: 400; font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+  .pressure { font-family: var(--font); font-size: 12px; color: var(--ink-soft); margin: 7px 0 6px; }
+  .pressure b { color: var(--ink); font-weight: 600; }
+  .pressure .unit { color: var(--muted); }
+  .cues { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+  .cues li {
+    font-size: 11.5px; line-height: 1.32; color: var(--ink-soft);
+    padding-left: 13px; position: relative;
+  }
+  .cues li::before {
+    content: ""; position: absolute; left: 0; top: 6px;
+    width: 5px; height: 5px; background: var(--teal); border-radius: 50%;
+  }
+  .cues li b { color: var(--ink); font-weight: 600; }
+  .plot {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: repeating-linear-gradient(to right, var(--line-soft) 0 1px, transparent 1px 28px), var(--paper);
+    padding: 8px 10px 6px;
+    position: relative;
+  }
+  .plot svg { display: block; width: 100%; height: auto; }
+  .plot img { display: block; width: 100%; height: auto; border-radius: 4px; }
+  .plot.screenshot { background: #000; border-color: #333; }
+  .wave-line { fill: none; stroke: var(--blue); stroke-width: 2.1; stroke-linejoin: round; stroke-linecap: round; }
+  .ref-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+  .cue-band {
+    margin-top: 4px;
+    border: 1.5px solid var(--teal);
+    border-radius: 8px;
+    background: var(--teal-tint);
+    padding: 8px 14px 8px;
+    display: grid;
+    grid-template-columns: 1fr 1.25fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .cue-band .label { font-family: var(--font); font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--teal-deep); }
+  .cue-band h3 { margin: 5px 0 6px; font-size: 16px; font-weight: 700; line-height: 1.12; }
+  .cue-band p { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--ink-soft); }
+  .cue-band p b { color: var(--teal-deep); }
+  .stepup-img { display: flex; flex-direction: column; gap: 6px; }
+  .stepup-img img { display: block; width: 100%; height: auto; border-radius: 5px; }
+  .safety {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border: 1px solid var(--ink);
+    border-radius: 8px;
+    padding: 11px 16px;
+  }
+  .safety .icon {
+    font-family: var(--font); font-weight: 600; font-size: 11px; letter-spacing: 0.1em;
+    color: var(--teal-deep); border: 1.5px solid var(--teal); border-radius: 5px;
+    padding: 4px 8px; white-space: nowrap;
+  }
+  .safety .txt { font-size: 12.5px; line-height: 1.35; }
+  .safety .txt b { font-weight: 600; }
+  .balloon { font-size: 13px; }
+  .footer {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    min-height: calc(0.46in + 15px);
+    gap: 16px;
+  }
+  .footer .meta { text-align: right; font-size: 9.5px; color: var(--muted); line-height: 1.4; }
+
+  @page { size: letter portrait; margin: 0; }
+  @media print {
+    html, body { background: #fff; }
+    .stage { padding: 0; }
+    .sheet { box-shadow: none; width: 8.5in; height: 11in; min-height: 11in; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <section class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h1>Pulmonary Artery Catheter Simulator</h1>
+      </div>
+    </div>
+
+    <div class="path">
+      <div class="path-node"><span class="abbr">SVC</span><span class="full">Superior vena cava</span></div>
+      <div class="path-node"><span class="abbr">RA</span><span class="full">Right atrium</span></div>
+      <div class="path-node"><span class="abbr">RV</span><span class="full">Right ventricle</span></div>
+      <div class="path-node"><span class="abbr">PA</span><span class="full">Pulmonary artery</span></div>
+      <div class="path-node wedge"><span class="abbr">PCWP</span><span class="full">Wedge</span></div>
+    </div>
+
+    <div class="chambers">
+      <!-- RA -->
+      <div class="row">
+        <div class="row-left">
+          <div class="chamber-tag">
+            <span class="badge">RA</span>
+            <span class="chamber-name">Right Atrium<small>low, gentle waves</small></span>
+          </div>
+          <div class="pressure"><b>mean 2–6</b> <span class="unit">mmHg</span></div>
+          <ul class="cues">
+            <li>Small, rolling <b>a / c / v</b> waves close to baseline</li>
+            <li>Low amplitude — no sharp peaks</li>
+          </ul>
+        </div>
+        <div class="plot screenshot">
+          <img src="assets/waveform-ra.png" alt="Right Atrium waveform" />
+        </div>
+      </div>
+
+      <!-- RV -->
+      <div class="row">
+        <div class="row-left">
+          <div class="chamber-tag">
+            <span class="badge">RV</span>
+            <span class="chamber-name">Right Ventricle<small>sudden tall, spiky tracing</small></span>
+          </div>
+          <div class="pressure"><b>15–25 / 0–8</b> <span class="unit">mmHg</span></div>
+          <ul class="cues">
+            <li>Sharp systolic <b>upstroke</b>; diastole dips <b>near zero</b></li>
+            <li>Diastolic pressure <b>rises through filling</b> (up-sloping floor)</li>
+            <li><b>Watch for PVCs / ectopy</b> — the catheter irritates the ventricle</li>
+          </ul>
+        </div>
+        <div class="plot screenshot">
+          <img src="assets/waveform-rv.png" alt="Right Ventricle waveform" />
+        </div>
+      </div>
+
+      <!-- PA -->
+      <div class="row accent">
+        <div class="row-left">
+          <div class="chamber-tag">
+            <span class="badge">PA</span>
+            <span class="chamber-name">Pulmonary Artery<small>diastole steps up + dicrotic notch</small></span>
+          </div>
+          <div class="pressure"><b>15–25 / 8–15</b> <span class="unit">mmHg</span></div>
+          <ul class="cues">
+            <li>Systolic peak <b>same height as RV</b></li>
+            <li>Diastole <b>steps up</b> — no longer near zero</li>
+            <li><b>Dicrotic notch</b> appears on the downstroke</li>
+          </ul>
+        </div>
+        <div class="plot screenshot">
+          <img src="assets/waveform-pa.png" alt="Pulmonary Artery waveform" />
+        </div>
+      </div>
+
+      <!-- PCWP -->
+      <div class="row">
+        <div class="row-left">
+          <div class="chamber-tag">
+            <span class="badge">PCWP</span>
+            <span class="chamber-name">Wedge<small>balloon wedged in distal PA</small></span>
+          </div>
+          <div class="pressure"><b>mean 6–12</b> <span class="unit">mmHg</span> · <span class="unit">lower than PA diastolic</span></div>
+          <ul class="cues">
+            <li>Tracing <b>dampens</b> to a low, rounded waveform with <b>a / v</b> waves</li>
+            <li>Reflects <b>left atrial</b> pressure</li>
+            <li><b>Deflate the balloon after reading</b> — never leave it wedged</li>
+          </ul>
+        </div>
+        <div class="plot screenshot">
+          <img src="assets/waveform-pcwp.png" alt="PCWP wedge waveform" />
+        </div>
+      </div>
+    </div>
+
+    <!-- KEY CUE -->
+    <div class="cue-band">
+      <div>
+        <div class="label">★ The single most important cue</div>
+        <h3>RV → PA: diastolic <span class="mono">step-UP</span></h3>
+        <p>The systolic peak stays <b>about the same</b> — but the diastolic floor <b>lifts off zero</b>. Same height, raised floor = you've entered the PA.</p>
+      </div>
+      <div class="stepup-img">
+        <img src="assets/waveform-stepup.png" alt="RV to PA transition — diastolic step-up" />
+      </div>
+    </div>
+
+    <!-- SAFETY -->
+    <div class="safety">
+      <span class="icon">BALLOON RULE</span>
+      <div class="txt"><b>Advance with the balloon <span class="balloon">●</span> UP</b> (inflated, so it floats forward safely) &nbsp;·&nbsp; <b>Withdraw with the balloon <span class="balloon">○</span> DOWN</b> (deflated).</div>
+    </div>
+
+    <div class="footer">
+      <div class="meta">June 14, 2026</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>
